@@ -1,0 +1,466 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-roar-green: #00552B;
+  --color-roar-deep: #003D25;
+  --color-roar-ivory: #F8F5EF;
+  --color-roar-charcoal: #202020;
+  --color-roar-gold: #C6A667;
+  --color-roar-obsidian: #111111;
+
+  --font-display: "Be Vietnam Pro", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: "Be Vietnam Pro", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html, body {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    background-color: #F8F5EF;
+    color: #202020;
+  }
+
+  html.dark, html.dark body {
+    background-color: #0E1512;
+    color: #F1EFEA;
+  }
+
+  h1, h2, h3, h4, .font-editorial {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes heroProgress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes loaderSweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-hero-progress {
+  transform-origin: left center;
+  animation: heroProgress 6.5s linear forwards;
+}
+
+.animate-loader-sweep {
+  animation: loaderSweep 1.2s ease-in-out infinite;
+}
+
+@keyframes metricsMarquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-metrics-marquee {
+  display: flex;
+  width: max-content;
+  animation: metricsMarquee 32s linear infinite;
+}
+
+.animate-metrics-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes bbPlacePop {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.7;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bbCellBlast {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1.65);
+  }
+  35% {
+    transform: scale(1.12);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  100% {
+    transform: scale(0.15);
+    opacity: 0;
+    filter: brightness(1.4);
+  }
+}
+
+@keyframes bbRowSweep {
+  0% {
+    transform: scaleX(0.1) scaleY(1.25);
+    opacity: 0.95;
+  }
+  45% {
+    transform: scaleX(1.04) scaleY(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1.08) scaleY(0.15);
+    opacity: 0;
+  }
+}
+
+@keyframes bbColSweep {
+  0% {
+    transform: scaleY(0.1) scaleX(1.25);
+    opacity: 0.95;
+  }
+  45% {
+    transform: scaleY(1.04) scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1.08) scaleX(0.15);
+    opacity: 0;
+  }
+}
+
+@keyframes bbShardFly {
+  0% {
+    transform: translate(-50%, -50%) translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate3d(var(--tx, 0px), var(--ty, 0px), 0) rotate(var(--rot, 160deg)) scale(0.15);
+    opacity: 0;
+  }
+}
+
+@keyframes bbFloatScore {
+  0% {
+    transform: translate(-50%, -40%) scale(0.65);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -75%) scale(1.12);
+    opacity: 1;
+  }
+  75% {
+    transform: translate(-50%, -145%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -190%) scale(0.92);
+    opacity: 0;
+  }
+}
+
+@keyframes bbBannerPop {
+  0% {
+    transform: translate(-50%, 10px) scale(0.45);
+    opacity: 0;
+  }
+  22% {
+    transform: translate(-50%, -4px) scale(1.14);
+    opacity: 1;
+  }
+  38% {
+    transform: translate(-50%, 0px) scale(1);
+    opacity: 1;
+  }
+  82% {
+    transform: translate(-50%, -8px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -22px) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes bbBoardShakeLight {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-2px, 2px, 0); }
+  50% { transform: translate3d(2px, -2px, 0); }
+  75% { transform: translate3d(-1px, -1px, 0); }
+}
+
+@keyframes bbBoardShakeHeavy {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  20% { transform: translate3d(-4px, 3px, 0) rotate(-0.6deg); }
+  40% { transform: translate3d(4px, -3px, 0) rotate(0.6deg); }
+  60% { transform: translate3d(-3px, -2px, 0) rotate(-0.4deg); }
+  80% { transform: translate3d(2px, 2px, 0) rotate(0.3deg); }
+}
+
+@keyframes bbTrayDeal {
+  0% {
+    transform: scale(0.55) translateY(8px);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.06) translateY(-1px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-bb-place {
+  animation: bbPlacePop 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-bb-blast {
+  animation: bbCellBlast 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-bb-row-sweep {
+  transform-origin: center center;
+  animation: bbRowSweep 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bb-col-sweep {
+  transform-origin: center center;
+  animation: bbColSweep 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bb-shard {
+  animation: bbShardFly 480ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bb-float-score {
+  animation: bbFloatScore 880ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bb-banner {
+  animation: bbBannerPop 1150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bb-shake-light {
+  animation: bbBoardShakeLight 220ms ease-out;
+}
+
+.animate-bb-shake-heavy {
+  animation: bbBoardShakeHeavy 300ms ease-out;
+}
+
+.animate-bb-tray-deal {
+  animation: bbTrayDeal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes candyWiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  20% { transform: rotate(-7deg) scale(1.07); }
+  40% { transform: rotate(7deg) scale(1.1); }
+  60% { transform: rotate(-5deg) scale(1.06); }
+  80% { transform: rotate(4deg) scale(1.03); }
+}
+
+@keyframes candyDropIn {
+  0% {
+    transform: translate3d(0, calc(var(--drop-rows, 1) * -108%), 0) scale(0.94, 1.08);
+    opacity: 0.72;
+  }
+  72% {
+    transform: translate3d(0, 4%, 0) scale(1.07, 0.92);
+    opacity: 1;
+  }
+  88% {
+    transform: translate3d(0, -2%, 0) scale(0.97, 1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1, 1);
+    opacity: 1;
+  }
+}
+
+@keyframes candyBurstOut {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1.1);
+  }
+  42% {
+    transform: scale(1.24) rotate(6deg);
+    opacity: 1;
+    filter: brightness(1.85);
+  }
+  100% {
+    transform: scale(0.18) rotate(-10deg);
+    opacity: 0;
+    filter: brightness(2.1);
+  }
+}
+
+@keyframes candyChillFloat {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-2px) scale(1.02); }
+}
+
+@keyframes candyHintPulse {
+  0%, 100% { transform: scale(1) rotate(0deg); filter: brightness(1); }
+  50% { transform: scale(1.13) rotate(4deg); filter: brightness(1.28); }
+}
+
+@keyframes candyExplosionRing {
+  0% { transform: translate(-50%, -50%) scale(0.18); opacity: 0.95; }
+  65% { opacity: 0.65; }
+  100% { transform: translate(-50%, -50%) scale(2.8); opacity: 0; }
+}
+
+@keyframes candyShakeEpic {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  14% { transform: translate3d(-6px, 4px, 0) rotate(-1.1deg) scale(1.01); }
+  28% { transform: translate3d(6px, -5px, 0) rotate(1.1deg) scale(1.01); }
+  44% { transform: translate3d(-5px, -3px, 0) rotate(-0.8deg); }
+  60% { transform: translate3d(4px, 4px, 0) rotate(0.7deg); }
+  78% { transform: translate3d(-3px, 2px, 0) rotate(-0.4deg); }
+}
+
+@keyframes lightningStrike {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  32% { opacity: 0.35; }
+  52% { opacity: 1; }
+  78% { opacity: 0.45; }
+  100% { opacity: 0; }
+}
+
+@keyframes lightningFlashBg {
+  0% { opacity: 0; }
+  15% { opacity: 0.42; }
+  38% { opacity: 0.12; }
+  56% { opacity: 0.32; }
+  100% { opacity: 0; }
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes candyBeamH {
+  0% { transform: translateY(-50%) scaleX(0.12) scaleY(1.4); opacity: 0.95; }
+  45% { transform: translateY(-50%) scaleX(1.03) scaleY(1); opacity: 1; }
+  100% { transform: translateY(-50%) scaleX(1.06) scaleY(0.12); opacity: 0; }
+}
+
+@keyframes candyBeamV {
+  0% { transform: translateX(-50%) scaleY(0.12) scaleX(1.4); opacity: 0.95; }
+  45% { transform: translateX(-50%) scaleY(1.03) scaleX(1); opacity: 1; }
+  100% { transform: translateX(-50%) scaleY(1.06) scaleX(0.12); opacity: 0; }
+}
+
+@keyframes candyPraisePop {
+  0% { transform: translate(-50%, -40%) scale(0.32) rotate(-7deg); opacity: 0; }
+  24% { transform: translate(-50%, -52%) scale(1.16) rotate(2deg); opacity: 1; }
+  42% { transform: translate(-50%, -50%) scale(1) rotate(-1deg); opacity: 1; }
+  80% { transform: translate(-50%, -55%) scale(1.02) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -72%) scale(0.88) rotate(1deg); opacity: 0; }
+}
+
+.animate-candy-wiggle {
+  animation: candyWiggle 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-candy-drop {
+  animation: candyDropIn 330ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-candy-burst {
+  animation: candyBurstOut 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-candy-chill {
+  animation: candyChillFloat 3.4s ease-in-out infinite;
+}
+
+.animate-candy-hint {
+  animation: candyHintPulse 900ms ease-in-out infinite;
+}
+
+.animate-candy-ring {
+  animation: candyExplosionRing 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-candy-shake-epic {
+  animation: candyShakeEpic 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-lightning-strike {
+  animation: lightningStrike 450ms ease-out forwards;
+}
+
+.animate-lightning-flash {
+  animation: lightningFlashBg 420ms ease-out forwards;
+}
+
+.animate-spin-slow {
+  animation: spinSlow 7s linear infinite;
+}
+
+.animate-candy-beam-h {
+  transform-origin: center center;
+  animation: candyBeamH 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-candy-beam-v {
+  transform-origin: center center;
+  animation: candyBeamV 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-candy-praise {
+  animation: candyPraisePop 980ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="400" height="500">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141816"/>
+      <stop offset="100%" stop-color="#080B0A"/>
+    </linearGradient>
+    <linearGradient id="steel3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#9CA3AF"/>
+      <stop offset="35%" stop-color="#E5E7EB"/>
+      <stop offset="65%" stop-color="#D1D5DB"/>
+      <stop offset="100%" stop-color="#6B7280"/>
+    </linearGradient>
+    <radialGradient id="glow3" cx="50%" cy="46%" r="45%">
+      <stop offset="0%" stop-color="#C6A667" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#080B0A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg3)"/>
+  <circle cx="200" cy="235" r="180" fill="url(#glow3)"/>
+  <rect x="20" y="20" width="360" height="460" rx="16" fill="none" stroke="#C6A667" stroke-opacity="0.35" stroke-width="1"/>
+  <text x="200" y="54" text-anchor="middle" fill="#C6A667" font-family="Georgia, serif" font-size="11" font-weight="bold" letter-spacing="4">ROAR MILL COLLECTION</text>
+  <ellipse cx="200" cy="412" rx="76" ry="13" fill="#000000" fill-opacity="0.6"/>
+  <!-- Grinder Cap Assembly -->
+  <rect x="148" y="88" width="104" height="32" rx="10" fill="#18181B" stroke="#C6A667" stroke-width="1.2"/>
+  <rect x="142" y="116" width="116" height="36" rx="6" fill="url(#steel3)"/>
+  <rect x="148" y="150" width="104" height="7" fill="#C6A667"/>
+  <!-- Glass Jar Body -->
+  <rect x="134" y="157" width="132" height="244" rx="22" fill="#232625" stroke="#9CA3AF" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- Whole Black Peppercorns -->
+  <rect x="142" y="172" width="116" height="218" rx="16" fill="#131211"/>
+  <g fill="#2C2824" stroke="#4D463F" stroke-width="0.9">
+    <circle cx="158" cy="190" r="8.5"/><circle cx="177" cy="187" r="8.5"/><circle cx="197" cy="190" r="8.5"/><circle cx="217" cy="187" r="8.5"/><circle cx="238" cy="191" r="8.5"/>
+    <circle cx="166" cy="206" r="8.5"/><circle cx="187" cy="204" r="8.5"/><circle cx="207" cy="207" r="8.5"/><circle cx="228" cy="204" r="8.5"/><circle cx="244" cy="208" r="7"/>
+    <circle cx="158" cy="364" r="8.5"/><circle cx="178" cy="368" r="8.5"/><circle cx="198" cy="365" r="8.5"/><circle cx="218" cy="369" r="8.5"/><circle cx="239" cy="365" r="8.5"/>
+    <circle cx="167" cy="380" r="7.5"/><circle cx="189" cy="382" r="7.5"/><circle cx="210" cy="380" r="7.5"/><circle cx="231" cy="381" r="7.5"/>
+  </g>
+  <!-- Highlight -->
+  <rect x="145" y="168" width="10" height="218" rx="5" fill="#FFFFFF" fill-opacity="0.14"/>
+  <!-- Label -->
+  <rect x="142" y="226" width="116" height="122" rx="6" fill="#003D25" stroke="#C6A667" stroke-width="1.6"/>
+  <text x="200" y="248" text-anchor="middle" fill="#C6A667" font-family="sans-serif" font-size="9" font-weight="bold" letter-spacing="2">ROAR® GRINDER</text>
+  <line x1="162" y1="256" x2="238" y2="256" stroke="#C6A667" stroke-opacity="0.55" stroke-width="1"/>
+  <text x="200" y="278" text-anchor="middle" fill="#F8F5EF" font-family="Georgia, serif" font-size="13.5" font-weight="bold">TIÊU ĐEN HẠT</text>
+  <text x="200" y="299" text-anchor="middle" fill="#C6A667" font-family="Georgia, serif" font-size="14" font-weight="bold">CỐI XAY</text>
+  <text x="200" y="322" text-anchor="middle" fill="#F8F5EF" font-family="monospace" font-size="11" font-weight="bold">70G JAR</text>
+  <text x="200" y="338" text-anchor="middle" fill="#F8F5EF" fill-opacity="0.72" font-family="sans-serif" font-size="7" letter-spacing="1">FRESH MILL PEPPERCORN</text>
+  <text x="200" y="454" text-anchor="middle" fill="#F8F5EF" font-family="Georgia, serif" font-size="16" font-weight="bold">Tiêu Đen Hạt Cối Xay 70G</text>
+  <text x="200" y="472" text-anchor="middle" fill="#C6A667" font-family="sans-serif" font-size="10" letter-spacing="1.5">XAY TƯƠI TẠI BÀN · NẮP CỐI XAY TIỆN DỤNG</text>
+</svg>

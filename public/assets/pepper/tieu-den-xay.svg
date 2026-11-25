@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="400" height="500">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0D261A"/>
+      <stop offset="100%" stop-color="#06140D"/>
+    </linearGradient>
+    <linearGradient id="gold1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E3C787"/>
+      <stop offset="50%" stop-color="#C6A667"/>
+      <stop offset="100%" stop-color="#8C6D32"/>
+    </linearGradient>
+    <linearGradient id="glass1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#222524"/>
+      <stop offset="30%" stop-color="#333735"/>
+      <stop offset="70%" stop-color="#1E201F"/>
+      <stop offset="100%" stop-color="#141615"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#C6A667" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#06140D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg1)"/>
+  <circle cx="200" cy="235" r="175" fill="url(#glow1)"/>
+  <rect x="20" y="20" width="360" height="460" rx="16" fill="none" stroke="#C6A667" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="200" y="54" text-anchor="middle" fill="#C6A667" font-family="Georgia, serif" font-size="11" font-weight="bold" letter-spacing="4">ROAR HIGHLAND SPICES</text>
+  <!-- Jar Shadow -->
+  <ellipse cx="200" cy="410" rx="76" ry="13" fill="#000000" fill-opacity="0.5"/>
+  <!-- Jar Body -->
+  <rect x="132" y="148" width="136" height="252" rx="20" fill="url(#glass1)" stroke="#C6A667" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- Fine Ground Black Pepper Fill Texture -->
+  <rect x="140" y="198" width="120" height="192" rx="14" fill="#181715"/>
+  <g fill="#4A453F" opacity="0.65">
+    <circle cx="155" cy="220" r="2"/><circle cx="174" cy="215" r="1.5"/><circle cx="215" cy="212" r="2"/><circle cx="240" cy="224" r="1.8"/>
+    <circle cx="162" cy="368" r="2"/><circle cx="188" cy="376" r="1.6"/><circle cx="232" cy="372" r="2.2"/><circle cx="248" cy="362" r="1.5"/>
+  </g>
+  <g fill="#7A7065" opacity="0.55">
+    <circle cx="165" cy="208" r="1.4"/><circle cx="195" cy="218" r="1.7"/><circle cx="228" cy="206" r="1.3"/><circle cx="175" cy="378" r="1.6"/><circle cx="216" cy="380" r="1.5"/>
+  </g>
+  <!-- Gold Screw Lid -->
+  <rect x="144" y="106" width="112" height="44" rx="8" fill="url(#gold1)"/>
+  <rect x="144" y="138" width="112" height="6" fill="#7C5E28" opacity="0.45"/>
+  <!-- Glass Highlight -->
+  <rect x="144" y="158" width="10" height="226" rx="5" fill="#FFFFFF" fill-opacity="0.1"/>
+  <!-- Front Label -->
+  <rect x="142" y="232" width="116" height="118" rx="6" fill="#003D25" stroke="#C6A667" stroke-width="1.5"/>
+  <text x="200" y="256" text-anchor="middle" fill="#C6A667" font-family="sans-serif" font-size="9" font-weight="bold" letter-spacing="2">ROAR®</text>
+  <line x1="164" y1="264" x2="236" y2="264" stroke="#C6A667" stroke-opacity="0.5" stroke-width="1"/>
+  <text x="200" y="286" text-anchor="middle" fill="#F8F5EF" font-family="Georgia, serif" font-size="14" font-weight="bold">TIÊU ĐEN</text>
+  <text x="200" y="305" text-anchor="middle" fill="#F8F5EF" font-family="Georgia, serif" font-size="14" font-weight="bold">XAY MỊN</text>
+  <text x="200" y="326" text-anchor="middle" fill="#C6A667" font-family="monospace" font-size="10" font-weight="bold">HŨ 45G / 90G</text>
+  <text x="200" y="340" text-anchor="middle" fill="#F8F5EF" fill-opacity="0.7" font-family="sans-serif" font-size="7" letter-spacing="1">GROUND BLACK PEPPER</text>
+  <!-- Loose Peppercorns -->
+  <circle cx="114" cy="402" r="7" fill="#2A2623" stroke="#575049" stroke-width="1"/>
+  <circle cx="129" cy="410" r="6" fill="#1F1C1A" stroke="#4D4741" stroke-width="1"/>
+  <circle cx="276" cy="406" r="7" fill="#292522" stroke="#575049" stroke-width="1"/>
+  <circle cx="291" cy="399" r="5.5" fill="#1C1917" stroke="#4D4741" stroke-width="1"/>
+  <text x="200" y="454" text-anchor="middle" fill="#F8F5EF" font-family="Georgia, serif" font-size="16" font-weight="bold">Tiêu Đen Xay Tây Nguyên</text>
+  <text x="200" y="472" text-anchor="middle" fill="#C6A667" font-family="sans-serif" font-size="10" letter-spacing="1.5">100% NGUYÊN CHẤT · HƯƠNG CAY NỒNG</text>
+</svg>

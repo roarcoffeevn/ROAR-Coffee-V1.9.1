@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#053322"/>
+      <stop offset="100%" stop-color="#0B1F17"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#C6A667" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#C6A667" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="36" y="36" width="1128" height="558" rx="24" stroke="#C6A667" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- Emblem -->
+  <rect x="540" y="108" width="120" height="120" rx="26" fill="#00552B" stroke="#C6A667" stroke-width="3"/>
+  <path d="M578 197V139H604C616.8 139 624 145.6 624 156.6C624 165.1 619.4 171 611.4 173.3L625.5 197H611.8L599.2 175H590.3V197H578ZM590.3 164.8H602.6C608.4 164.8 611.8 161.9 611.8 156.7C611.8 151.7 608.4 149 602.6 149H590.3V164.8Z" fill="#F8F5EF"/>
+  <circle cx="631" cy="140" r="6" fill="#C6A667"/>
+
+  <!-- Brand Name -->
+  <text x="600" y="305" text-anchor="middle" fill="#F8F5EF" font-family="Plus Jakarta Sans, Be Vietnam Pro, sans-serif" font-size="68" font-weight="800" letter-spacing="6">ROAR COFFEE&#174;</text>
+
+  <!-- Slogan -->
+  <text x="600" y="362" text-anchor="middle" fill="#C6A667" font-family="Be Vietnam Pro, sans-serif" font-size="28" font-weight="600" letter-spacing="2">KH&#416;I B&#7842;N L&#296;NH. &#272;&#7852;M CH&#7844;T RI&#202;NG.</text>
+  <text x="600" y="402" text-anchor="middle" fill="#F8F5EF" fill-opacity="0.72" font-family="Plus Jakarta Sans, sans-serif" font-size="22" font-weight="500" letter-spacing="1.5">Igniting Courage. Defining Character.</text>
+
+  <!-- Divider -->
+  <line x1="360" y1="448" x2="840" y2="448" stroke="#C6A667" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <!-- Pillars -->
+  <text x="600" y="498" text-anchor="middle" fill="#F8F5EF" fill-opacity="0.88" font-family="Be Vietnam Pro, sans-serif" font-size="20" font-weight="600" letter-spacing="1">10+ V&#249;ng Nguy&#234;n Li&#7879;u  &#183;  7 C&#225; T&#237;nh &#272;&#7897;c B&#7843;n  &#183;  Nh&#226;n Xanh S14/S16/S18</text>
+</svg>
