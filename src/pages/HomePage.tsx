@@ -26,6 +26,7 @@ import {
   Smartphone,
   Sparkles,
   Sprout,
+  Swords,
   Trophy,
 } from 'lucide-react';
 import type { GameKey } from '../lib/gamesCatalog';
@@ -76,6 +77,24 @@ const HOME_GAMES_SHOWCASE: HomeGameShowcaseItem[] = [
     accentGradient: 'from-[#3B102F] via-[#1B0D2B] to-[#081F15]',
     iconBg: 'bg-pink-500/20 text-pink-300 border-pink-400/40',
     icon: <Candy className="w-5 h-5" />,
+  },
+  {
+    key: 'fruitninja',
+    titleVi: 'ROAR Fruit Ninja · Chém Trái Cây Dojo',
+    titleEn: 'ROAR Fruit Ninja · Dojo Blade Master',
+    shortVi: 'Fruit Ninja',
+    shortEn: 'Fruit Ninja',
+    badgeVi: 'MỚI · HÀNH ĐỘNG 60FPS',
+    badgeEn: 'NEW · 60FPS ACTION',
+    descVi: 'Vung kiếm 4 hiệu ứng (Lục Bảo, Hỏa Long, Lôi Thần, Băng Tuyết) chẻ đôi trái cây đúng góc cắt, săn Chuối Băng/Frenzy/x2 & Lựu liên hoàn cực đã!',
+    descEn: 'Wield 4 mythic katana trails to split fruits at real cut angles, trigger Freeze/Frenzy/2x Bananas & unleash Pomegranate blitz blasts!',
+    highlightVi: '3 chế độ Classic · Zen · Arcade cùng âm thanh võ đường sống động',
+    highlightEn: 'Classic · Zen · Arcade modes with rich katana & splash audio',
+    rewardVi: 'Điểm thưởng + Mã giảm giá + Quà ROAR COFFEE',
+    rewardEn: 'Bonus points + Vouchers + ROAR COFFEE gifts',
+    accentGradient: 'from-[#3A1B0D] via-[#221008] to-[#0B1E14]',
+    iconBg: 'bg-orange-500/20 text-orange-300 border-orange-400/40',
+    icon: <Swords className="w-5 h-5" />,
   },
   {
     key: 'cubeaway',
@@ -494,7 +513,7 @@ export const HomePage: React.FC = () => {
         {(() => {
           const activeShowcase =
             HOME_GAMES_SHOWCASE.find((g) => g.key === selectedShowcaseGame) || HOME_GAMES_SHOWCASE[0];
-          const featuredQuickKeys: GameKey[] = ['candysaga', 'cubeaway', 'blockblast', 'wheel'];
+          const featuredQuickKeys: GameKey[] = ['fruitninja', 'candysaga', 'cubeaway', 'blockblast', 'wheel'];
           return (
             <div className="rounded-xl border border-[#00552B]/25 dark:border-[#C6A667]/35 bg-white dark:bg-[#16221C] shadow-xs overflow-hidden">
               {/* Compact Launcher Row — Click any game icon or the bar to expand details */}
@@ -513,14 +532,14 @@ export const HomePage: React.FC = () => {
                     <div className="min-w-0">
                       <p className="text-xs sm:text-sm font-bold text-[#202020] dark:text-[#F1EFEA] truncate">
                         {t(
-                          'ROAR Play & Win · 10 Mini-Game Săn Quà & Điểm Thưởng',
-                          'ROAR Play & Win · 10 Interactive Reward Mini-Games'
+                          'ROAR Play & Win · 11 Mini-Game Săn Quà & Điểm Thưởng',
+                          'ROAR Play & Win · 11 Interactive Reward Mini-Games'
                         )}
                       </p>
                       <p className="text-[11px] text-[#202020]/65 dark:text-[#F1EFEA]/65 truncate">
                         {t(
-                          'Bấm vào icon game hoặc thanh này để xem chi tiết: Candy Saga, Cube Away 3D, Block Blast…',
-                          'Click any game icon or this bar to preview Candy Saga, Cube Away 3D, Block Blast & more'
+                          'Bấm vào icon game để mở giới thiệu: Fruit Ninja, Candy Saga, Cube Away 3D, Block Blast…',
+                          'Click any game icon to preview Fruit Ninja, Candy Saga, Cube Away 3D, Block Blast & more'
                         )}
                       </p>
                     </div>
@@ -685,7 +704,7 @@ export const HomePage: React.FC = () => {
                           to={localePath('/play')}
                           className="px-4 py-2.5 rounded-lg border border-[#00552B]/30 dark:border-[#C6A667]/35 text-[#00552B] dark:text-[#C6A667] hover:bg-[#00552B]/5 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
                         >
-                          <span>{t('Mở sảnh 10 Mini-Game', 'Open All 10 Games')}</span>
+                          <span>{t('Mở sảnh 11 Mini-Game', 'Open All 11 Games')}</span>
                         </Link>
                       </div>
                     </div>

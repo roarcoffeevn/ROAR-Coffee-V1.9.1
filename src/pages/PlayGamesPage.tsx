@@ -23,6 +23,7 @@ import {
   Smartphone,
   Sparkles,
   Sprout,
+  Swords,
   Ticket,
   Trophy,
   X,
@@ -66,6 +67,10 @@ const CandySagaGame = React.lazy(() =>
   import('../components/games/CandySagaGame').then((m) => ({ default: m.CandySagaGame }))
 );
 
+const FruitNinjaGame = React.lazy(() =>
+  import('../components/games/FruitNinjaGame').then((m) => ({ default: m.FruitNinjaGame }))
+);
+
 interface RecentWinner {
   id: number;
   game_key: GameKey;
@@ -83,6 +88,7 @@ const VALID_GAME_KEYS: GameKey[] = [
   'blockblast',
   'cubeaway',
   'candysaga',
+  'fruitninja',
   'shake',
   'fortune',
   'quiz',
@@ -112,6 +118,7 @@ export const PlayGamesPage: React.FC = () => {
     blockblast: 2,
     cubeaway: 2,
     candysaga: 2,
+    fruitninja: 2,
     shake: 2,
     fortune: 1,
     quiz: 1,
@@ -170,7 +177,7 @@ export const PlayGamesPage: React.FC = () => {
 
   const handleSaveGameProgress = useCallback(
     async (
-      gameKey: 'blockblast' | 'cubeaway' | 'candysaga' | 'memory' | 'harvest',
+      gameKey: 'blockblast' | 'cubeaway' | 'candysaga' | 'fruitninja' | 'memory' | 'harvest',
       payload: { currentLevel: number; maxLevel: number; bestScore: number }
     ) => {
       setGameProgressMap((prev) => ({
@@ -211,6 +218,7 @@ export const PlayGamesPage: React.FC = () => {
     { key: 'blockblast', icon: <LayoutGrid className="w-4 h-4" />, shortVi: 'Block Blast', shortEn: 'Block Blast', tagVi: 'Xếp khối nổ combo', tagEn: 'Puzzle block combos' },
     { key: 'cubeaway', icon: <Box className="w-4 h-4" />, shortVi: 'Cube Away 3D', shortEn: 'Cube Away 3D', tagVi: 'Gỡ khối xoay 360°', tagEn: '360° 3D cube puzzle' },
     { key: 'candysaga', icon: <Candy className="w-4 h-4" />, shortVi: 'Candy Saga', shortEn: 'Candy Saga', tagVi: 'Nối kẹo sấm chớp', tagEn: 'Match-3 lightning saga' },
+    { key: 'fruitninja', icon: <Swords className="w-4 h-4" />, shortVi: 'Fruit Ninja', shortEn: 'Fruit Ninja', tagVi: 'Chém trái cây Dojo', tagEn: 'Blade slice dojo' },
     { key: 'shake', icon: <Smartphone className="w-4 h-4" />, shortVi: 'Lắc Điện Thoại', shortEn: 'Shake & Win', tagVi: 'Lắc tay rinh lộc', tagEn: 'Shake for lucky drops' },
     { key: 'fortune', icon: <ScrollText className="w-4 h-4" />, shortVi: 'Xin Xăm Cà Phê', shortEn: 'Fortune Stick', tagVi: 'Rút quẻ gu cà phê', tagEn: 'Draw coffee fortune' },
     { key: 'quiz', icon: <HelpCircle className="w-4 h-4" />, shortVi: 'Gu 7 Cá Tính', shortEn: 'Taste Quiz', tagVi: 'Khám phá gu vị', tagEn: 'Find your roast profile' },
@@ -727,6 +735,28 @@ export const PlayGamesPage: React.FC = () => {
                   savedProgress={gameProgressMap.candysaga}
                   onSaveProgress={(p) => handleSaveGameProgress('candysaga', p)}
                   onPlayReal={(useExtra, score) => handlePlayReal('candysaga', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'fruitninja' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#1A0E08] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang khởi tạo võ đường Fruit Ninja ROAR...', 'Loading ROAR Fruit Ninja Dojo...')}
+                  </div>
+                }
+              >
+                <FruitNinjaGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.fruitninja ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.fruitninja}
+                  onSaveProgress={(p) => handleSaveGameProgress('fruitninja', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('fruitninja', useExtra, score)}
                   onRequireLogin={() => navigate(localePath('/account'))}
                   onDemoResult={handleDemoResult}
                 />

@@ -2349,7 +2349,7 @@ export async function handleStaticApiFallback(
     }
 
     const score = Math.max(0, Math.floor(Number(body.score || 0)));
-    if ((gameKey === 'harvest' || gameKey === 'blockblast' || gameKey === 'cubeaway' || gameKey === 'candysaga') && score < Number(cfg.min_score_to_win || 0)) {
+    if ((gameKey === 'harvest' || gameKey === 'blockblast' || gameKey === 'cubeaway' || gameKey === 'candysaga' || gameKey === 'fruitninja') && score < Number(cfg.min_score_to_win || 0)) {
       state.gamePlays!.unshift({ id: Date.now(), user_id: me.id, game_key: gameKey, play_date: today, used_points: usedPoints, score });
       writeState(state);
       return jsonResponse({

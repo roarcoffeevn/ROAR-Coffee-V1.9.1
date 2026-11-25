@@ -3928,13 +3928,14 @@ app.get('/api/games', (req: AuthedRequest, res) => {
          WHEN 'blockblast' THEN 2
          WHEN 'cubeaway' THEN 3
          WHEN 'candysaga' THEN 4
-         WHEN 'shake' THEN 5
-         WHEN 'fortune' THEN 6
-         WHEN 'quiz' THEN 7
-         WHEN 'memory' THEN 8
-         WHEN 'harvest' THEN 9
-         WHEN 'mystery' THEN 10
-         ELSE 11
+         WHEN 'fruitninja' THEN 5
+         WHEN 'shake' THEN 6
+         WHEN 'fortune' THEN 7
+         WHEN 'quiz' THEN 8
+         WHEN 'memory' THEN 9
+         WHEN 'harvest' THEN 10
+         WHEN 'mystery' THEN 11
+         ELSE 12
        END`
     )
     .all() as any[];
@@ -4005,7 +4006,7 @@ app.post('/api/games/play', requireAuth, (req: AuthedRequest, res) => {
   const gameKey = String(req.body?.gameKey || '').trim() as GameKey;
   const useExtraPoints = Boolean(req.body?.useExtraPoints);
   const score = Math.max(0, Math.floor(Number(req.body?.score || 0)));
-  const validKeys: GameKey[] = ['wheel', 'blockblast', 'cubeaway', 'candysaga', 'quiz', 'memory', 'harvest', 'mystery', 'shake', 'fortune'];
+  const validKeys: GameKey[] = ['wheel', 'blockblast', 'cubeaway', 'candysaga', 'fruitninja', 'quiz', 'memory', 'harvest', 'mystery', 'shake', 'fortune'];
   if (!validKeys.includes(gameKey)) {
     res.status(400).json({ error: 'Mini-game không hợp lệ.' });
     return;
@@ -4055,7 +4056,7 @@ app.post('/api/games/play', requireAuth, (req: AuthedRequest, res) => {
         );
       }
 
-      if ((gameKey === 'harvest' || gameKey === 'blockblast' || gameKey === 'cubeaway' || gameKey === 'candysaga') && score < Number(cfg.min_score_to_win || 0)) {
+      if ((gameKey === 'harvest' || gameKey === 'blockblast' || gameKey === 'cubeaway' || gameKey === 'candysaga' || gameKey === 'fruitninja') && score < Number(cfg.min_score_to_win || 0)) {
         db.prepare(`
           INSERT INTO game_plays (user_id, game_key, play_date, used_points, score, reward_id, claim_id)
           VALUES (?, ?, ?, ?, ?, NULL, NULL)
@@ -5211,13 +5212,14 @@ app.get('/api/admin/games/analytics', requirePermission('promotions'), (req, res
          WHEN 'blockblast' THEN 2
          WHEN 'cubeaway' THEN 3
          WHEN 'candysaga' THEN 4
-         WHEN 'shake' THEN 5
-         WHEN 'fortune' THEN 6
-         WHEN 'quiz' THEN 7
-         WHEN 'memory' THEN 8
-         WHEN 'harvest' THEN 9
-         WHEN 'mystery' THEN 10
-         ELSE 11
+         WHEN 'fruitninja' THEN 5
+         WHEN 'shake' THEN 6
+         WHEN 'fortune' THEN 7
+         WHEN 'quiz' THEN 8
+         WHEN 'memory' THEN 9
+         WHEN 'harvest' THEN 10
+         WHEN 'mystery' THEN 11
+         ELSE 12
        END`
     )
     .all() as any[];

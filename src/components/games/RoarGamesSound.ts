@@ -437,6 +437,70 @@ class RoarGameSoundEngine {
     this.playTone(1318.5, 0.18, 'sine', 0.042, 0.07);
   }
 
+  ninjaWhoosh(speedRatio = 1) {
+    // Crisp aerodynamic katana air-cut swoosh
+    const clamped = Math.min(2.2, Math.max(0.6, speedRatio));
+    this.playNoiseBurst(0.11, 1450 * clamped, 'bandpass', 0.055 * Math.min(1.4, clamped), 0, 420);
+    this.playPitchSweep(620 * clamped, 240, 0.09, 'sine', 0.03, 0);
+  }
+
+  ninjaSlice(combo = 1, isCrit = false) {
+    // Crisp wet fruit-splitting slash + melodic katana chime
+    this.playNoiseBurst(0.085, 2900, 'highpass', 0.075, 0, 950);
+    this.playPitchSweep(540, 175, 0.08, 'triangle', 0.075, 0);
+    const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51];
+    const note = scale[Math.min(Math.max(combo - 1, 0), scale.length - 1)];
+    this.playTone(note, 0.14, 'sine', 0.055, 0.01);
+    if (isCrit) {
+      this.playTone(1567.98, 0.22, 'triangle', 0.07, 0.02);
+      this.playTone(2093.0, 0.26, 'sine', 0.05, 0.06);
+    }
+  }
+
+  ninjaComboBlitz(count = 3) {
+    const base = count >= 5 ? 659.25 : 523.25;
+    this.playTone(base, 0.12, 'triangle', 0.07, 0);
+    this.playTone(base * 1.25, 0.14, 'triangle', 0.075, 0.045);
+    this.playTone(base * 1.5, 0.18, 'sine', 0.08, 0.09);
+    this.playTone(base * 2, 0.26, 'triangle', 0.075, 0.14);
+  }
+
+  ninjaFreeze() {
+    [1318.5, 1567.98, 1760, 2093].forEach((f, idx) => {
+      this.playTone(f, 0.28, 'sine', 0.05, idx * 0.045);
+    });
+    this.playNoiseBurst(0.24, 4200, 'highpass', 0.045, 0.02, 1800);
+  }
+
+  ninjaFrenzy() {
+    this.playPitchSweep(220, 660, 0.24, 'sawtooth', 0.05, 0);
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, idx) => {
+      this.playTone(f, 0.18, 'triangle', 0.065, 0.06 + idx * 0.05);
+    });
+  }
+
+  ninjaBomb() {
+    // Cinematic sub-bass detonation + debris blast
+    this.playPitchSweep(140, 26, 0.62, 'sine', 0.16, 0);
+    this.playPitchSweep(220, 38, 0.48, 'sawtooth', 0.08, 0);
+    this.playNoiseBurst(0.58, 1200, 'lowpass', 0.14, 0, 95);
+    this.playNoiseBurst(0.32, 3200, 'bandpass', 0.08, 0.02, 380);
+  }
+
+  ninjaPomegranateHit(hits = 1) {
+    const f = 320 + Math.min(hits, 24) * 38;
+    this.playTone(f, 0.07, 'triangle', 0.075, 0);
+    this.playNoiseBurst(0.055, 2200, 'bandpass', 0.06, 0, 800);
+  }
+
+  ninjaPomegranateBoom() {
+    this.playPitchSweep(165, 32, 0.45, 'sine', 0.14, 0);
+    this.playNoiseBurst(0.4, 1800, 'lowpass', 0.12, 0, 140);
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
+      this.playTone(f, 0.28, 'triangle', 0.07, 0.04 + i * 0.04);
+    });
+  }
+
   toggleLofi(): boolean {
     if (this.lofiActive) {
       this.stopLofi();

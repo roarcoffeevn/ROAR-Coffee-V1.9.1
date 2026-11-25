@@ -127,6 +127,7 @@ const GAME_SHORT_NAMES: Record<string, { vi: string; en: string }> = {
   blockblast: { vi: 'Block Blast', en: 'Block Blast' },
   cubeaway: { vi: 'Cube Away 3D', en: 'Cube Away 3D' },
   candysaga: { vi: 'Candy Saga', en: 'Candy Saga' },
+  fruitninja: { vi: 'Fruit Ninja', en: 'Fruit Ninja' },
   shake: { vi: 'Lắc Máy', en: 'Shake & Win' },
   fortune: { vi: 'Xin Xăm', en: 'Fortune Stick' },
   quiz: { vi: 'Gu 7 Vị', en: 'Taste Quiz' },

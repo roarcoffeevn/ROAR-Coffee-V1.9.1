@@ -34,6 +34,7 @@ const GAME_LABELS: Record<GameKey, string> = {
   blockblast: 'ROAR Block Blast · Xếp Khối',
   cubeaway: 'ROAR Cube Away 3D · Giải Khối',
   candysaga: 'ROAR Candy Saga · Kẹo Ngọt 8 Hướng',
+  fruitninja: 'ROAR Fruit Ninja · Chém Trái Cây',
   shake: 'Lắc Điện Thoại Săn Quà',
   fortune: 'Xin Xăm Cà Phê Đầu Ngày',
   quiz: 'Trắc Nghiệm Gu 7 Cá Tính',

@@ -578,7 +578,7 @@ export function registerRealtimeSagaRoutes(app: express.Express) {
   app.put('/api/games/progress', requireAuth, (req: AuthedRequest, res) => {
     const userId = req.authUser!.userId;
     const gameKey = String(req.body?.gameKey || '').trim();
-    const allowed = ['blockblast', 'cubeaway', 'candysaga', 'memory', 'harvest'];
+    const allowed = ['blockblast', 'cubeaway', 'candysaga', 'fruitninja', 'memory', 'harvest'];
     if (!allowed.includes(gameKey)) {
       res.status(400).json({ error: 'Invalid gameKey' });
       return;
