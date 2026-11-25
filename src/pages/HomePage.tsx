@@ -9,13 +9,17 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Coffee,
   Compass,
+  CupSoda,
   Disc3,
+  Droplets,
   Flame,
   Gamepad2,
   Gift,
   Globe2,
   HelpCircle,
+  Layers,
   LayoutGrid,
   PackageCheck,
   PackageOpen,
@@ -28,8 +32,14 @@ import {
   Sprout,
   Swords,
   Trophy,
+  Wrench,
 } from 'lucide-react';
-import type { GameKey } from '../lib/gamesCatalog';
+import {
+  GAME_CATEGORIES,
+  GAME_CATEGORY_MAP,
+  type GameCategoryKey,
+  type GameKey,
+} from '../lib/gamesCatalog';
 import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import { MediaImage } from '../components/MediaImage';
 import { VietnamOriginMap } from '../components/VietnamOriginMap';
@@ -79,13 +89,103 @@ const HOME_GAMES_SHOWCASE: HomeGameShowcaseItem[] = [
     icon: <Candy className="w-5 h-5" />,
   },
   {
+    key: 'mergecup',
+    titleVi: 'ROAR Merge Cup · Hợp Nhất Ly Cà Phê',
+    titleEn: 'ROAR Merge Cup · Suika Coffee Drop',
+    shortVi: 'Merge Cup',
+    shortEn: 'Merge Cup',
+    badgeVi: 'MỚI · VẬT LÝ SUIKA',
+    badgeEn: 'NEW · SUIKA PHYSICS',
+    descVi: 'Thả nguyên liệu từ Hạt xanh → Rang xay → Espresso → Phin Sữa Đá → Cold Brew → Ly ROAR Reserve Vàng. Hai món chạm nhau nổ tung bọt kem cực đã!',
+    descEn: 'Drop beans and brews in tactile 2D physics to merge from Green Bean all the way up to the Golden ROAR Reserve Cup!',
+    highlightVi: 'Vật lý va chạm nảy 60fps · Lắc ly & Nâng hạt thông minh',
+    highlightEn: '60fps 2D physics collisions · Shake jar & Upgrade boosters',
+    rewardVi: 'Điểm thưởng + Voucher -45K + Quà Hòa Tan Gold',
+    rewardEn: 'Bonus points + 45K Voucher + Instant Gold Box',
+    accentGradient: 'from-[#3E210C] via-[#271508] to-[#0E2016]',
+    iconBg: 'bg-amber-500/20 text-amber-300 border-amber-400/40',
+    icon: <CupSoda className="w-5 h-5" />,
+  },
+  {
+    key: 'tripletile',
+    titleVi: 'ROAR Triple Tile · Ghép 3 Tầng Xoắn Não',
+    titleEn: 'ROAR Triple Tile · 3-Layer Match',
+    shortVi: 'Triple Tile',
+    shortEn: 'Triple Tile',
+    badgeVi: 'MỚI · SHEEP A SHEEP',
+    badgeEn: 'NEW · TRIPLE LAYER',
+    descVi: 'Xếp chồng nhiều lớp thẻ pha chế & hương vị; chạm đưa xuống khay 7 ô, đủ 3 thẻ giống nhau là triệt tiêu. Màn 1 chill, màn 2+ cực xoắn não!',
+    descEn: 'Pick layered barista tiles into the 7-slot holding tray and match triplets to clear progressively deeper puzzle stacks.',
+    highlightVi: 'Khay 7 ô + Kệ đẩy dự phòng · Hoàn tác & Xáo thẻ',
+    highlightEn: '7-slot tray + Reserve shelf · Undo & Shuffle boosters',
+    rewardVi: 'Điểm thưởng + Voucher -16% + Quà Arabica 250g',
+    rewardEn: 'Points + 16% OFF Voucher + Arabica 250g',
+    accentGradient: 'from-[#0C3323] via-[#092419] to-[#17211C]',
+    iconBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40',
+    icon: <Layers className="w-5 h-5" />,
+  },
+  {
+    key: 'layersort',
+    titleVi: 'Coffee Layer Sort · Rót Tầng Cà Phê Chill',
+    titleEn: 'Coffee Layer Sort · Layered Pour Puzzle',
+    shortVi: 'Layer Sort',
+    shortEn: 'Layer Sort',
+    badgeVi: 'MỚI · ASMR THƯ GIÃN',
+    badgeEn: 'NEW · ASMR CHILL',
+    descVi: 'Rót từng tầng Espresso, Sữa tươi, Matcha, Caramel, Kem muối giữa các ly thủy tinh cho tới khi mỗi ly đồng nhất một hương vị.',
+    descEn: 'Pour Espresso, Fresh Milk, Matcha, Caramel & Salted Cream layers between glass cups until every glass is pure.',
+    highlightVi: 'Âm thanh rót nước thư giãn · Thêm ly rỗng & Gợi ý',
+    highlightEn: 'Soothing ASMR pouring audio · Extra glass & Smart hint',
+    rewardVi: 'Điểm thưởng + Voucher -15% + Hộp Hòa Tan Silver',
+    rewardEn: 'Points + 15% OFF Voucher + Instant Silver Box',
+    accentGradient: 'from-[#0D2A38] via-[#0A1E29] to-[#0B1E18]',
+    iconBg: 'bg-sky-500/20 text-sky-300 border-sky-400/40',
+    icon: <Droplets className="w-5 h-5" />,
+  },
+  {
+    key: 'baristarush',
+    titleVi: 'Good Barista Rush · Pha Chế Tính Giờ',
+    titleEn: 'Good Barista Rush · Speed Brew Counter',
+    shortVi: 'Barista Rush',
+    shortEn: 'Barista Rush',
+    badgeVi: 'MỚI · QUẦY BAR 50S',
+    badgeEn: 'NEW · BAR COUNTER',
+    descVi: 'Khách gọi Bạc xỉu, Cà phê muối, Latte, Cold Brew Cam Sả liên tục! Chạm ghép đúng trình tự nguyên liệu trong 50 giây để giữ chuỗi combo.',
+    descEn: 'Serve Bac Xiu, Salted Cream Coffee & Citrus Cold Brew orders in exact bottom-to-top sequence within 50 seconds for combo tips.',
+    highlightVi: '3 khách gọi song song · Combo tiền thưởng x2–x6',
+    highlightEn: '3 live order tickets · High-speed tip combos',
+    rewardVi: 'Điểm thưởng + Voucher -20% + Cà Phê Muối Chill',
+    rewardEn: 'Points + 20% OFF Voucher + Salted Coffee Box',
+    accentGradient: 'from-[#3B1E0D] via-[#261308] to-[#0D1E15]',
+    iconBg: 'bg-orange-500/20 text-orange-300 border-orange-400/40',
+    icon: <Coffee className="w-5 h-5" />,
+  },
+  {
+    key: 'woodbolts',
+    titleVi: 'Gỡ Thanh Gỗ & Ốc Vít · Vật Lý Trọng Lực',
+    titleEn: 'Wood Nuts & Bolts · Gravity Pin Puzzle',
+    shortVi: 'Gỡ Thanh Gỗ',
+    shortEn: 'Wood Bolts',
+    badgeVi: 'MỚI · VẬT LÝ TRỌNG LỰC',
+    badgeEn: 'NEW · GRAVITY PHYSICS',
+    descVi: 'Tháo từng con ốc vít chuyển sang lỗ trống hợp lý để các thanh gỗ xoay lắc con lắc và rơi tự do theo trọng lực cực cuốn.',
+    descEn: 'Unscrew and relocate steel bolts into unobstructed sockets so wooden beams swing and drop free under gravity.',
+    highlightVi: 'Trọng lực & xoay con lắc thật · +1 Lỗ chờ & Tháo ốc',
+    highlightEn: 'Real pendulum & gravity physics · +1 Socket & Unscrew',
+    rewardVi: 'Điểm thưởng + Voucher -16% + Quà ROAR Espresso 250g',
+    rewardEn: 'Points + 16% OFF Voucher + ROAR Espresso 250g',
+    accentGradient: 'from-[#331F12] via-[#22140B] to-[#0E1E16]',
+    iconBg: 'bg-amber-600/25 text-amber-200 border-amber-500/45',
+    icon: <Wrench className="w-5 h-5" />,
+  },
+  {
     key: 'fruitninja',
     titleVi: 'ROAR Fruit Ninja · Chém Trái Cây Dojo',
     titleEn: 'ROAR Fruit Ninja · Dojo Blade Master',
     shortVi: 'Fruit Ninja',
     shortEn: 'Fruit Ninja',
-    badgeVi: 'MỚI · HÀNH ĐỘNG 60FPS',
-    badgeEn: 'NEW · 60FPS ACTION',
+    badgeVi: 'HÀNH ĐỘNG 60FPS',
+    badgeEn: '60FPS ACTION',
     descVi: 'Vung kiếm 4 hiệu ứng (Lục Bảo, Hỏa Long, Lôi Thần, Băng Tuyết) chẻ đôi trái cây đúng góc cắt, săn Chuối Băng/Frenzy/x2 & Lựu liên hoàn cực đã!',
     descEn: 'Wield 4 mythic katana trails to split fruits at real cut angles, trigger Freeze/Frenzy/2x Bananas & unleash Pomegranate blitz blasts!',
     highlightVi: '3 chế độ Classic · Zen · Arcade cùng âm thanh võ đường sống động',
@@ -277,7 +377,8 @@ export const HomePage: React.FC = () => {
   const [giftVouchers, setGiftVouchers] = useState<Product[]>([]);
   const [giftOpen, setGiftOpen] = useState(false);
   const [gamesShowcaseOpen, setGamesShowcaseOpen] = useState(false);
-  const [selectedShowcaseGame, setSelectedShowcaseGame] = useState<GameKey>('candysaga');
+  const [selectedShowcaseCat, setSelectedShowcaseCat] = useState<GameCategoryKey>('all');
+  const [selectedShowcaseGame, setSelectedShowcaseGame] = useState<GameKey>('mergecup');
   const [articles, setArticles] = useState<any[]>([]);
   const [promotions, setPromotions] = useState<any[]>([]);
   const [heroIdx, setHeroIdx] = useState(0);
@@ -511,9 +612,15 @@ export const HomePage: React.FC = () => {
       {/* INTERACTIVE CLICK-TO-EXPAND MINI-GAMES SHOWCASE LAUNCHER */}
       <section className="max-w-[1280px] mx-auto px-5 sm:px-6 pt-5">
         {(() => {
+          const filteredShowcaseItems =
+            selectedShowcaseCat === 'all'
+              ? HOME_GAMES_SHOWCASE
+              : HOME_GAMES_SHOWCASE.filter((g) => GAME_CATEGORY_MAP[g.key] === selectedShowcaseCat);
           const activeShowcase =
-            HOME_GAMES_SHOWCASE.find((g) => g.key === selectedShowcaseGame) || HOME_GAMES_SHOWCASE[0];
-          const featuredQuickKeys: GameKey[] = ['fruitninja', 'candysaga', 'cubeaway', 'blockblast', 'wheel'];
+            HOME_GAMES_SHOWCASE.find((g) => g.key === selectedShowcaseGame) ||
+            filteredShowcaseItems[0] ||
+            HOME_GAMES_SHOWCASE[0];
+          const featuredQuickKeys: GameKey[] = ['mergecup', 'tripletile', 'layersort', 'baristarush', 'woodbolts', 'fruitninja'];
           return (
             <div className="rounded-xl border border-[#00552B]/25 dark:border-[#C6A667]/35 bg-white dark:bg-[#16221C] shadow-xs overflow-hidden">
               {/* Compact Launcher Row — Click any game icon or the bar to expand details */}
@@ -532,14 +639,14 @@ export const HomePage: React.FC = () => {
                     <div className="min-w-0">
                       <p className="text-xs sm:text-sm font-bold text-[#202020] dark:text-[#F1EFEA] truncate">
                         {t(
-                          'ROAR Play & Win · 11 Mini-Game Săn Quà & Điểm Thưởng',
-                          'ROAR Play & Win · 11 Interactive Reward Mini-Games'
+                          'ROAR Play & Win · 16 Mini-Game Săn Quà & Điểm Thưởng',
+                          'ROAR Play & Win · 16 Interactive Reward Mini-Games'
                         )}
                       </p>
                       <p className="text-[11px] text-[#202020]/65 dark:text-[#F1EFEA]/65 truncate">
                         {t(
-                          'Bấm vào icon game để mở giới thiệu: Fruit Ninja, Candy Saga, Cube Away 3D, Block Blast…',
-                          'Click any game icon to preview Fruit Ninja, Candy Saga, Cube Away 3D, Block Blast & more'
+                          'Mới ra mắt: Merge Cup, Triple Tile, Layer Sort, Barista Rush, Gỡ Thanh Gỗ & phân loại theo thể loại!',
+                          'New hits: Merge Cup, Triple Tile, Layer Sort, Barista Rush, Wood Bolts & categorized game browser!'
                         )}
                       </p>
                     </div>
@@ -555,7 +662,7 @@ export const HomePage: React.FC = () => {
                 </button>
 
                 {/* Quick-Click Interactive Game Icons */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                   {featuredQuickKeys.map((gKey) => {
                     const gItem = HOME_GAMES_SHOWCASE.find((item) => item.key === gKey);
                     if (!gItem) return null;
@@ -568,6 +675,7 @@ export const HomePage: React.FC = () => {
                           if (isFocused) {
                             setGamesShowcaseOpen(false);
                           } else {
+                            setSelectedShowcaseCat('all');
                             setSelectedShowcaseGame(gItem.key);
                             setGamesShowcaseOpen(true);
                           }
@@ -583,7 +691,7 @@ export const HomePage: React.FC = () => {
                         <span className="shrink-0 transition-transform duration-200 group-hover:scale-110">
                           {gItem.icon}
                         </span>
-                        <span className="hidden sm:inline whitespace-nowrap">
+                        <span className="hidden lg:inline whitespace-nowrap">
                           {lang === 'vi' ? gItem.shortVi : gItem.shortEn}
                         </span>
                       </button>
@@ -602,9 +710,41 @@ export const HomePage: React.FC = () => {
               {/* Expanded Interactive Game Gallery & Spotlight */}
               {gamesShowcaseOpen && (
                 <div className="p-4 sm:p-5 border-t border-[#202020]/10 dark:border-white/10 bg-[#F8F5EF]/70 dark:bg-[#0E1512]/70 space-y-4">
-                  {/* Interactive 10-Game Selector Grid/Strip */}
+                  {/* Category Filter Tabs inside Home Showcase */}
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                    {HOME_GAMES_SHOWCASE.map((gItem) => {
+                    {GAME_CATEGORIES.map((cat) => {
+                      const activeCat = selectedShowcaseCat === cat.key;
+                      const catCount =
+                        cat.key === 'all'
+                          ? HOME_GAMES_SHOWCASE.length
+                          : HOME_GAMES_SHOWCASE.filter((g) => GAME_CATEGORY_MAP[g.key] === cat.key).length;
+                      return (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          onClick={() => {
+                            setSelectedShowcaseCat(cat.key);
+                            if (cat.key !== 'all' && GAME_CATEGORY_MAP[selectedShowcaseGame] !== cat.key) {
+                              const firstMatch = HOME_GAMES_SHOWCASE.find((g) => GAME_CATEGORY_MAP[g.key] === cat.key);
+                              if (firstMatch) setSelectedShowcaseGame(firstMatch.key);
+                            }
+                          }}
+                          className={`shrink-0 px-3 py-1.5 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                            activeCat
+                              ? 'bg-[#003D25] text-[#FDE68A] border-[#00552B] dark:bg-[#C6A667] dark:text-[#111111] dark:border-[#C6A667]'
+                              : 'bg-white dark:bg-[#16221C] text-[#202020]/75 dark:text-[#F1EFEA]/75 border-[#202020]/10 dark:border-white/10 hover:border-[#00552B]/40'
+                          }`}
+                        >
+                          <span>{lang === 'en' ? cat.labelEn : cat.labelVi}</span>
+                          <span className="font-mono text-[10px] opacity-75">{catCount}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Interactive Filtered Game Selector Strip */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {filteredShowcaseItems.map((gItem) => {
                       const active = gItem.key === activeShowcase.key;
                       return (
                         <button

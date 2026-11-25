@@ -31,6 +31,11 @@ import { AdminGamesAnalytics } from './AdminGamesAnalytics';
 
 const GAME_LABELS: Record<GameKey, string> = {
   wheel: 'Vòng Quay May Mắn',
+  mergecup: 'ROAR Merge Cup · Hợp Nhất Ly',
+  tripletile: 'ROAR Triple Tile · Ghép 3 Tầng',
+  layersort: 'Coffee Layer Sort · Rót Tầng',
+  baristarush: 'Good Barista Rush · Pha Chế',
+  woodbolts: 'Gỡ Thanh Gỗ & Ốc Vít',
   blockblast: 'ROAR Block Blast · Xếp Khối',
   cubeaway: 'ROAR Cube Away 3D · Giải Khối',
   candysaga: 'ROAR Candy Saga · Kẹo Ngọt 8 Hướng',

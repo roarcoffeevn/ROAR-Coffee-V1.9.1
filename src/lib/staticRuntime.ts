@@ -2270,7 +2270,19 @@ export async function handleStaticApiFallback(
         : DEFAULT_GAME_REWARDS.map((r, i) => ({ ...r, id: i + 1 }));
     } else {
       let maxId = state.gameRewards.reduce((m, r) => Math.max(m, Number(r.id || 0)), 0);
-      for (const defKey of ['shake', 'fortune', 'blockblast', 'cubeaway', 'candysaga'] as const) {
+      for (const defKey of [
+        'shake',
+        'fortune',
+        'blockblast',
+        'cubeaway',
+        'candysaga',
+        'fruitninja',
+        'mergecup',
+        'tripletile',
+        'layersort',
+        'baristarush',
+        'woodbolts',
+      ] as const) {
         if (!state.gameRewards.some((r) => r.game_key === defKey)) {
           for (const rw of DEFAULT_GAME_REWARDS.filter((x) => x.game_key === defKey)) {
             maxId += 1;
@@ -2349,7 +2361,19 @@ export async function handleStaticApiFallback(
     }
 
     const score = Math.max(0, Math.floor(Number(body.score || 0)));
-    if ((gameKey === 'harvest' || gameKey === 'blockblast' || gameKey === 'cubeaway' || gameKey === 'candysaga' || gameKey === 'fruitninja') && score < Number(cfg.min_score_to_win || 0)) {
+    const scoreGated: GameKey[] = [
+      'harvest',
+      'blockblast',
+      'cubeaway',
+      'candysaga',
+      'fruitninja',
+      'mergecup',
+      'tripletile',
+      'layersort',
+      'baristarush',
+      'woodbolts',
+    ];
+    if (scoreGated.includes(gameKey) && score < Number(cfg.min_score_to_win || 0)) {
       state.gamePlays!.unshift({ id: Date.now(), user_id: me.id, game_key: gameKey, play_date: today, used_points: usedPoints, score });
       writeState(state);
       return jsonResponse({

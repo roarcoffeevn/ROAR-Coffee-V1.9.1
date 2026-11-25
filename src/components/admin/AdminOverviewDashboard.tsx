@@ -124,6 +124,11 @@ const PAYMENT_NAMES: Record<string, { vi: string; en: string }> = {
 
 const GAME_SHORT_NAMES: Record<string, { vi: string; en: string }> = {
   wheel: { vi: 'Vòng Quay', en: 'Lucky Wheel' },
+  mergecup: { vi: 'Merge Cup', en: 'Merge Cup' },
+  tripletile: { vi: 'Triple Tile', en: 'Triple Tile' },
+  layersort: { vi: 'Layer Sort', en: 'Layer Sort' },
+  baristarush: { vi: 'Barista Rush', en: 'Barista Rush' },
+  woodbolts: { vi: 'Gỡ Thanh Gỗ', en: 'Wood Bolts' },
   blockblast: { vi: 'Block Blast', en: 'Block Blast' },
   cubeaway: { vi: 'Cube Away 3D', en: 'Cube Away 3D' },
   candysaga: { vi: 'Candy Saga', en: 'Candy Saga' },

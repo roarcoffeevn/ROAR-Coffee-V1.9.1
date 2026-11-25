@@ -18,6 +18,11 @@ import type { GameAnalyticsResponse, GameKey } from '../../lib/gamesCatalog';
 
 const SHORT_GAME_LABELS: Record<GameKey, string> = {
   wheel: 'Vòng Quay',
+  mergecup: 'Merge Cup',
+  tripletile: 'Triple Tile',
+  layersort: 'Layer Sort',
+  baristarush: 'Barista Rush',
+  woodbolts: 'Wood Bolts',
   blockblast: 'Block Blast',
   cubeaway: 'Cube Away 3D',
   candysaga: 'Candy Saga',

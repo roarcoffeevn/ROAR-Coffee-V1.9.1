@@ -5,7 +5,6 @@ import {
   Heart,
   Lock,
   Music,
-  Play,
   RotateCcw,
   Shield,
   Snowflake,
@@ -23,6 +22,7 @@ import { AdaptiveLogo } from '../AdaptiveLogo';
 
 type NinjaMode = 'classic' | 'zen' | 'arcade';
 type BladeId = 'emerald' | 'inferno' | 'thunder' | 'frost';
+type GamePhase = 'ready' | 'intro' | 'playing' | 'bomb_freeze' | 'ended';
 type FruitKind =
   | 'watermelon'
   | 'pineapple'
@@ -31,6 +31,9 @@ type FruitKind =
   | 'strawberry'
   | 'dragonfruit'
   | 'coconut'
+  | 'kiwi'
+  | 'mango'
+  | 'lime'
   | 'roar_bean'
   | 'banana_freeze'
   | 'banana_frenzy'
@@ -50,7 +53,6 @@ interface FruitEntity {
   vRot: number;
   sliced: boolean;
   enteredScreen: boolean;
-  /** Pomegranate boss multi-slash fields */
   pomHits?: number;
   pomTimer?: number;
   pomMaxTime?: number;
@@ -80,7 +82,7 @@ interface JuiceParticle {
   alpha: number;
   decay: number;
   gravity: number;
-  kind: 'drop' | 'spark' | 'shard' | 'ring';
+  kind: 'drop' | 'spark' | 'ring';
   maxRadius?: number;
 }
 
@@ -112,6 +114,19 @@ interface BladePoint {
   time: number;
 }
 
+interface MenuRingTarget {
+  mode: NinjaMode;
+  fruitKind: FruitKind;
+  ringColor: string;
+  labelVi: string;
+  labelEn: string;
+  subVi: string;
+  subEn: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 interface FruitNinjaGameProps {
   lang: string;
   config: GameConfigRecord;
@@ -135,7 +150,6 @@ interface BladeStyle {
   coreColor: string;
   glowColor: string;
   particleColor: string;
-  unlockBest: number;
 }
 
 const BLADE_STYLES: BladeStyle[] = [
@@ -146,7 +160,6 @@ const BLADE_STYLES: BladeStyle[] = [
     coreColor: '#ECFDF5',
     glowColor: '#10B981',
     particleColor: '#C6A667',
-    unlockBest: 0,
   },
   {
     id: 'inferno',
@@ -155,7 +168,6 @@ const BLADE_STYLES: BladeStyle[] = [
     coreColor: '#FFFBEB',
     glowColor: '#F97316',
     particleColor: '#EF4444',
-    unlockBest: 0,
   },
   {
     id: 'thunder',
@@ -164,7 +176,6 @@ const BLADE_STYLES: BladeStyle[] = [
     coreColor: '#F5F3FF',
     glowColor: '#8B5CF6',
     particleColor: '#38BDF8',
-    unlockBest: 0,
   },
   {
     id: 'frost',
@@ -173,7 +184,6 @@ const BLADE_STYLES: BladeStyle[] = [
     coreColor: '#F0F9FF',
     glowColor: '#38BDF8',
     particleColor: '#BAE6FD',
-    unlockBest: 0,
   },
 ];
 
@@ -188,6 +198,9 @@ const FRUIT_META: Record<
   strawberry: { outer: '#E11D48', inner: '#FDA4AF', juice: '#FB7185', accent: '#FEF08A', basePts: 5 },
   dragonfruit: { outer: '#DB2777', inner: '#F8FAFC', juice: '#EC4899', accent: '#1E293B', basePts: 7 },
   coconut: { outer: '#78350F', inner: '#F8FAFC', juice: '#E2E8F0', accent: '#451A03', basePts: 6 },
+  kiwi: { outer: '#654321', inner: '#84CC16', juice: '#A3E635', accent: '#111827', basePts: 5 },
+  mango: { outer: '#F59E0B', inner: '#FDE047', juice: '#FBBF24', accent: '#B45309', basePts: 5 },
+  lime: { outer: '#16A34A', inner: '#BEF264', juice: '#84CC16', accent: '#14532D', basePts: 4 },
   roar_bean: { outer: '#C6A667', inner: '#FEF08A', juice: '#F59E0B', accent: '#451A03', basePts: 25 },
   banana_freeze: { outer: '#38BDF8', inner: '#E0F2FE', juice: '#7DD3FC', accent: '#0284C7', basePts: 12 },
   banana_frenzy: { outer: '#FACC15', inner: '#FEF9C3', juice: '#FB923C', accent: '#DC2626', basePts: 12 },
@@ -195,6 +208,21 @@ const FRUIT_META: Record<
   pomegranate: { outer: '#9F1239', inner: '#E11D48', juice: '#BE123C', accent: '#FDE047', basePts: 15 },
   bomb: { outer: '#1F2937', inner: '#EF4444', juice: '#F97316', accent: '#FACC15', basePts: 0 },
 };
+
+const SENSEI_QUOTES = [
+  {
+    vi: 'Một nhát chém dứt khoát như pha Espresso chuẩn vị — chậm một nhịp để trúng cả ba quả!',
+    en: 'Slice decisively like pulling a clean Espresso shot — wait a beat to catch three fruits in one arc!',
+  },
+  {
+    vi: 'Giữ bình tĩnh trước những quả bom cháy ngòi; Chuối Băng và Mưa Trái Cây sẽ nhân bội điểm số.',
+    en: 'Stay poised near sizzling bombs; Freeze and Frenzy bananas multiply your combo mastery.',
+  },
+  {
+    vi: 'Khi Lựu Đỏ xuất hiện giữa võ đường, hãy chém liên tiếp thật nhanh trước khi nó phát nổ!',
+    en: 'When the Pomegranate hovers center stage, slash rapidly before the shockwave erupts!',
+  },
+];
 
 function distPointToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
   const dx = x2 - x1;
@@ -205,7 +233,7 @@ function distPointToSegment(px: number, py: number, x1: number, y1: number, x2: 
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-function getNinjaRank(score: number, lang: string): { vi: string; en: string; level: number } {
+function getNinjaRank(score: number): { vi: string; en: string; level: number } {
   if (score >= 700) return { vi: 'Huyền Thoại ROAR', en: 'ROAR Legend', level: 5 };
   if (score >= 450) return { vi: 'Đại Sư Dojo', en: 'Dojo Grandmaster', level: 4 };
   if (score >= 280) return { vi: 'Thượng Nhẫn', en: 'Master Shinobi', level: 3 };
@@ -226,12 +254,13 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
   onRequireLogin,
   onDemoResult,
 }) => {
-  const tr = (vi: string, en: string) => (lang === 'en' ? en : vi);
+  const tr = useCallback((vi: string, en: string) => (lang === 'en' ? en : vi), [lang]);
   const minScoreToWin = Math.max(120, Number(config.min_score_to_win || 180));
 
   const [mode, setMode] = useState<NinjaMode>('arcade');
   const [bladeId, setBladeId] = useState<BladeId>('emerald');
-  const [phase, setPhase] = useState<'ready' | 'playing' | 'ended'>('ready');
+  const [phase, setPhase] = useState<GamePhase>('ready');
+  const [introWord, setIntroWord] = useState<'READY' | 'GO'>('READY');
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState<number>(() => {
     let localBest = 0;
@@ -257,16 +286,16 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     double: 0,
   });
   const [soundMuted, setSoundMuted] = useState(gameSound.muted);
-  const [lofiOn, setLofiOn] = useState(gameSound.lofiActive);
+  const [dojoBgmOn, setDojoBgmOn] = useState(gameSound.dojoBgmActive);
   const [submittingReward, setSubmittingReward] = useState(false);
   const [claimedThisRun, setClaimedThisRun] = useState(false);
+  const [senseiQuoteIdx, setSenseiQuoteIdx] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Mutable high-frequency engine refs for rock-solid 60fps loop
   const engineRef = useRef({
-    phase: 'ready' as 'ready' | 'playing' | 'ended',
+    phase: 'ready' as GamePhase,
     mode: 'arcade' as NinjaMode,
     bladeId: 'emerald' as BladeId,
     width: 720,
@@ -286,6 +315,11 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     shakeTime: 0,
     shakePower: 0,
     bombFlashAlpha: 0,
+    bombFreezeTimer: 0,
+    bombCenterX: 0,
+    bombCenterY: 0,
+    introTimer: 0,
+    introSwitchedToGo: false,
     fruits: [] as FruitEntity[],
     halves: [] as SlicedHalf[],
     particles: [] as JuiceParticle[],
@@ -300,23 +334,75 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     strokeLastY: 0,
     nextId: 1,
     hudSyncAccum: 0,
+    menuTargets: [] as MenuRingTarget[],
   });
+
+  // Clean up Dojo BGM when leaving Fruit Ninja tab/component
+  useEffect(() => {
+    return () => {
+      gameSound.stopDojoBgm();
+    };
+  }, []);
 
   useEffect(() => {
     if (savedProgress?.best_score && savedProgress.best_score > bestScore) {
       setBestScore(savedProgress.best_score);
     }
-  }, [savedProgress?.best_score]);
+  }, [savedProgress?.best_score, bestScore]);
 
   useEffect(() => {
     engineRef.current.bladeId = bladeId;
   }, [bladeId]);
 
+  const computeMenuTargets = useCallback((w: number, h: number): MenuRingTarget[] => {
+    const cy = h * 0.62;
+    const r = w < 480 ? 34 : 44;
+    const spread = Math.min(w * 0.28, 195);
+    return [
+      {
+        mode: 'classic',
+        fruitKind: 'watermelon',
+        ringColor: '#22C55E',
+        labelVi: 'CLASSIC',
+        labelEn: 'CLASSIC',
+        subVi: '3 Mạng · Né Bom',
+        subEn: '3 Lives · Bombs',
+        x: w * 0.5 - spread,
+        y: cy + (w < 480 ? 12 : 0),
+        radius: r,
+      },
+      {
+        mode: 'arcade',
+        fruitKind: 'banana_frenzy',
+        ringColor: '#FACC15',
+        labelVi: 'ARCADE',
+        labelEn: 'ARCADE',
+        subVi: '60s · Chuối Siêu Cấp',
+        subEn: '60s · Power Bananas',
+        x: w * 0.5,
+        y: cy - (w < 480 ? 18 : 24),
+        radius: r + 4,
+      },
+      {
+        mode: 'zen',
+        fruitKind: 'apple',
+        ringColor: '#FB7185',
+        labelVi: 'ZEN',
+        labelEn: 'ZEN',
+        subVi: '90s · Chill Không Bom',
+        subEn: '90s · No Bombs',
+        x: w * 0.5 + spread,
+        y: cy + (w < 480 ? 12 : 0),
+        radius: r,
+      },
+    ];
+  }, []);
+
   const persistProgress = useCallback(
     (finalScore: number) => {
       const nextBest = Math.max(bestScore, finalScore);
       if (nextBest !== bestScore) setBestScore(nextBest);
-      const rank = getNinjaRank(nextBest, lang);
+      const rank = getNinjaRank(nextBest);
       try {
         localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify({ bestScore: nextBest, level: rank.level }));
       } catch {
@@ -328,7 +414,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         bestScore: nextBest,
       });
     },
-    [bestScore, lang, onSaveProgress]
+    [bestScore, onSaveProgress]
   );
 
   const finishGame = useCallback(
@@ -344,8 +430,10 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       setMaxCombo(eng.maxCombo);
       setTotalSliced(eng.totalSliced);
       setActiveEffects({ freeze: 0, frenzy: 0, double: 0 });
+      setSenseiQuoteIdx(Math.floor(Math.random() * SENSEI_QUOTES.length));
       persistProgress(eng.score);
 
+      gameSound.dojoScrollOpen();
       if (reason === 'bomb') {
         gameSound.ninjaBomb();
       } else if (eng.score >= minScoreToWin) {
@@ -357,14 +445,73 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     [minScoreToWin, persistProgress]
   );
 
-  const startRun = useCallback(
-    (chosenMode?: NinjaMode) => {
+  const triggerIntroAndStart = useCallback(
+    (chosenMode?: NinjaMode, slicedTarget?: MenuRingTarget, cutAngle = -0.45) => {
       const targetMode = chosenMode || mode;
       if (chosenMode) setMode(chosenMode);
       const eng = engineRef.current;
       const initialTime = targetMode === 'zen' ? 90 : targetMode === 'arcade' ? 60 : 0;
 
-      eng.phase = 'playing';
+      // Auto-start upbeat Dojo music if unmuted and not explicitly paused
+      if (!gameSound.muted && !gameSound.dojoBgmActive) {
+        gameSound.startDojoBgm();
+        setDojoBgmOn(true);
+      }
+
+      // Split the menu fruit visually for authentic Fruit Ninja launch!
+      eng.halves = [];
+      eng.particles = [];
+      eng.splats = [];
+      eng.callouts = [];
+      eng.fruits = [];
+
+      if (slicedTarget) {
+        const meta = FRUIT_META[slicedTarget.fruitKind];
+        const perpX = Math.cos(cutAngle + Math.PI / 2);
+        const perpY = Math.sin(cutAngle + Math.PI / 2);
+        for (const side of [-1, 1] as const) {
+          eng.halves.push({
+            kind: slicedTarget.fruitKind,
+            x: slicedTarget.x + perpX * side * 8,
+            y: slicedTarget.y + perpY * side * 8,
+            vx: perpX * side * 150,
+            vy: perpY * side * 120 - 110,
+            radius: slicedTarget.radius * 0.72,
+            rotation: 0,
+            vRot: side * 3.8,
+            cutAngle,
+            side,
+            alpha: 1,
+          });
+        }
+        eng.splats.push({
+          x: slicedTarget.x,
+          y: slicedTarget.y,
+          radius: slicedTarget.radius * 1.4,
+          color: meta.juice,
+          alpha: 0.5,
+          seed: Math.random() * 100,
+        });
+        for (let i = 0; i < 24; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 110 + Math.random() * 280;
+          eng.particles.push({
+            x: slicedTarget.x,
+            y: slicedTarget.y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            radius: 3 + Math.random() * 4.5,
+            color: i % 3 === 0 ? meta.inner : meta.juice,
+            alpha: 1,
+            decay: 1.4,
+            gravity: 480,
+            kind: 'drop',
+          });
+        }
+        gameSound.ninjaSlice(3, true);
+      }
+
+      eng.phase = 'intro';
       eng.mode = targetMode;
       eng.score = 0;
       eng.lives = 3;
@@ -372,25 +519,23 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       eng.maxCombo = 0;
       eng.totalSliced = 0;
       eng.wave = 1;
-      eng.spawnCooldown = 0.45;
+      eng.spawnCooldown = 0.35;
       eng.frenzySpawnCooldown = 0;
       eng.pomCooldown = targetMode === 'arcade' ? 17 : 22;
       eng.freezeRemaining = 0;
       eng.frenzyRemaining = 0;
       eng.doubleRemaining = 0;
-      eng.shakeTime = 0;
-      eng.shakePower = 0;
+      eng.shakeTime = 0.14;
+      eng.shakePower = 6;
       eng.bombFlashAlpha = 0;
-      eng.fruits = [];
-      eng.halves = [];
-      eng.particles = [];
-      eng.splats = [];
-      eng.callouts = [];
-      eng.trail = [];
+      eng.bombFreezeTimer = 0;
+      eng.introTimer = 1.1;
+      eng.introSwitchedToGo = false;
       eng.strokeComboCount = 0;
       eng.strokeComboTimer = 0;
 
-      setPhase('playing');
+      setPhase('intro');
+      setIntroWord('READY');
       setScore(0);
       setLives(3);
       setTimeLeft(initialTime);
@@ -398,7 +543,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       setTotalSliced(0);
       setClaimedThisRun(false);
       setActiveEffects({ freeze: 0, frenzy: 0, double: 0 });
-      gameSound.ninjaWhoosh(1.2);
+      gameSound.dojoGong();
     },
     [mode]
   );
@@ -439,7 +584,18 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       } else if (allowSpecials && roll < 0.28) {
         kind = 'roar_bean';
       } else {
-        const pool: FruitKind[] = ['watermelon', 'pineapple', 'orange', 'apple', 'strawberry', 'dragonfruit', 'coconut'];
+        const pool: FruitKind[] = [
+          'watermelon',
+          'pineapple',
+          'orange',
+          'apple',
+          'strawberry',
+          'dragonfruit',
+          'coconut',
+          'kiwi',
+          'mango',
+          'lime',
+        ];
         kind = pool[Math.floor(Math.random() * pool.length)];
       }
 
@@ -463,7 +619,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ? baseR * 1.18
           : kind === 'pineapple'
             ? baseR * 1.12
-            : kind === 'strawberry' || kind === 'roar_bean'
+            : kind === 'strawberry' || kind === 'lime' || kind === 'kiwi' || kind === 'roar_bean'
               ? baseR * 0.86
               : kind === 'bomb'
                 ? baseR * 0.96
@@ -490,7 +646,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       const eng = engineRef.current;
       const meta = FRUIT_META[fruit.kind];
 
-      // Handle Pomegranate multi-slash boss
       if (fruit.kind === 'pomegranate') {
         fruit.pomHits = (fruit.pomHits || 0) + 1;
         const mult = eng.doubleRemaining > 0 ? 2 : 1;
@@ -529,30 +684,37 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
       fruit.sliced = true;
 
-      // Bomb hit handling
       if (fruit.kind === 'bomb') {
-        eng.bombFlashAlpha = 0.92;
-        eng.shakeTime = 0.48;
-        eng.shakePower = 16;
-        for (let i = 0; i < 36; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const spd = 140 + Math.random() * 420;
-          eng.particles.push({
-            x: fruit.x,
-            y: fruit.y,
-            vx: Math.cos(ang) * spd,
-            vy: Math.sin(ang) * spd,
-            radius: 3 + Math.random() * 5,
-            color: i % 3 === 0 ? '#FFFFFF' : i % 2 === 0 ? '#F97316' : '#EF4444',
-            alpha: 1,
-            decay: 1.4,
-            gravity: 160,
-            kind: 'spark',
-          });
-        }
         if (eng.mode === 'classic') {
-          finishGame('bomb');
+          // Authentic Fruit Ninja Slow-Motion Radial White Beams before Bomb Detonation!
+          eng.phase = 'bomb_freeze';
+          eng.bombFreezeTimer = 0.85;
+          eng.bombCenterX = fruit.x;
+          eng.bombCenterY = fruit.y;
+          eng.shakeTime = 0.85;
+          eng.shakePower = 12;
+          setPhase('bomb_freeze');
+          gameSound.bombRaysPreBlast();
         } else {
+          eng.bombFlashAlpha = 0.85;
+          eng.shakeTime = 0.42;
+          eng.shakePower = 14;
+          for (let i = 0; i < 28; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const spd = 140 + Math.random() * 380;
+            eng.particles.push({
+              x: fruit.x,
+              y: fruit.y,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd,
+              radius: 3 + Math.random() * 4.5,
+              color: i % 3 === 0 ? '#FFFFFF' : i % 2 === 0 ? '#F97316' : '#EF4444',
+              alpha: 1,
+              decay: 1.5,
+              gravity: 160,
+              kind: 'spark',
+            });
+          }
           eng.score = Math.max(0, eng.score - 10);
           eng.strokeComboCount = 0;
           gameSound.ninjaBomb();
@@ -561,7 +723,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         return;
       }
 
-      // Valid fruit sliced!
       const isCrit = hitDistRatio < 0.28 && Math.random() < 0.45;
       const mult = eng.doubleRemaining > 0 ? 2 : 1;
       const critBonus = isCrit ? 10 : 0;
@@ -576,7 +737,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
       gameSound.ninjaSlice(eng.strokeComboCount, isCrit);
 
-      // Special Bananas & Golden Bean triggers
       if (fruit.kind === 'banana_freeze') {
         eng.freezeRemaining = 5.2;
         gameSound.ninjaFreeze();
@@ -599,7 +759,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         addCallout(fruit.x, fruit.y - 14, `+${gained} (2X)`, '#C084FC', 0.95);
       }
 
-      // Split into two halves perpendicular to cut angle
       const perpX = Math.cos(cutAngle + Math.PI / 2);
       const perpY = Math.sin(cutAngle + Math.PI / 2);
       const splitSpeed = 95 + Math.random() * 55;
@@ -619,7 +778,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         });
       }
 
-      // Persistent juice splatter on Dojo board
       if (eng.splats.length > 26) eng.splats.shift();
       eng.splats.push({
         x: fruit.x,
@@ -630,7 +788,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         seed: Math.random() * 100,
       });
 
-      // Shockwave ring + 18 juicy droplets
       eng.particles.push({
         x: fruit.x,
         y: fruit.y,
@@ -662,10 +819,9 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         });
       }
     },
-    [finishGame, tr]
+    [tr]
   );
 
-  // Canvas resize observer
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -674,34 +830,33 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     const updateSize = () => {
       const rect = container.getBoundingClientRect();
       const w = Math.max(300, Math.round(rect.width));
-      const h = Math.max(320, Math.round(rect.height));
+      const h = Math.max(340, Math.round(rect.height));
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       engineRef.current.width = w;
       engineRef.current.height = h;
+      engineRef.current.menuTargets = computeMenuTargets(w, h);
     };
 
     updateSize();
     const ro = new ResizeObserver(updateSize);
     ro.observe(container);
     return () => ro.disconnect();
-  }, []);
+  }, [computeMenuTargets]);
 
-  // Main 60fps simulation & rendering loop
   useEffect(() => {
     let rafId = 0;
     let lastTs = performance.now();
 
     const drawDojoBackground = (ctx: CanvasRenderingContext2D, w: number, h: number, eng: typeof engineRef.current) => {
       const bgGrad = ctx.createRadialGradient(w * 0.5, h * 0.42, 40, w * 0.5, h * 0.5, Math.max(w, h) * 0.78);
-      bgGrad.addColorStop(0, '#462A17');
-      bgGrad.addColorStop(0.55, '#2C190D');
-      bgGrad.addColorStop(1, '#140B06');
+      bgGrad.addColorStop(0, '#53321B');
+      bgGrad.addColorStop(0.55, '#341D0E');
+      bgGrad.addColorStop(1, '#170C06');
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, w, h);
 
-      // Horizontal dojo wooden plank seams & subtle grain
       const plankH = Math.max(48, h / 7);
       ctx.lineWidth = 1.5;
       for (let py = plankH; py < h; py += plankH) {
@@ -711,43 +866,42 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.lineTo(w, py);
         ctx.stroke();
 
-        ctx.strokeStyle = 'rgba(255, 215, 160, 0.04)';
+        ctx.strokeStyle = 'rgba(255, 215, 160, 0.05)';
         ctx.beginPath();
         ctx.moveTo(0, py + 1.5);
         ctx.lineTo(w, py + 1.5);
         ctx.stroke();
       }
 
-      // Subtle ROAR Dojo center emblem watermark (craft seal)
+      // Traditional Dojo Seal Emblem in background
       ctx.save();
       ctx.translate(w * 0.5, h * 0.5);
-      ctx.strokeStyle = 'rgba(198, 166, 103, 0.08)';
+      ctx.strokeStyle = 'rgba(198, 166, 103, 0.09)';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(0, 0, Math.min(w, h) * 0.24, 0, Math.PI * 2);
+      ctx.arc(0, 0, Math.min(w, h) * 0.25, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(0, 0, Math.min(w, h) * 0.2, 0, Math.PI * 2);
+      ctx.arc(0, 0, Math.min(w, h) * 0.21, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
 
-      // Active power-up perimeter auras
       if (eng.freezeRemaining > 0) {
         const freezeGrad = ctx.createRadialGradient(w * 0.5, h * 0.5, w * 0.25, w * 0.5, h * 0.5, w * 0.65);
         freezeGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
-        freezeGrad.addColorStop(1, 'rgba(56, 189, 248, 0.26)');
+        freezeGrad.addColorStop(1, 'rgba(56, 189, 248, 0.28)');
         ctx.fillStyle = freezeGrad;
         ctx.fillRect(0, 0, w, h);
       }
       if (eng.frenzyRemaining > 0) {
         const frenzyGrad = ctx.createRadialGradient(w * 0.5, h * 0.5, w * 0.22, w * 0.5, h * 0.5, w * 0.65);
         frenzyGrad.addColorStop(0, 'rgba(250, 204, 21, 0)');
-        frenzyGrad.addColorStop(1, 'rgba(249, 115, 22, 0.22)');
+        frenzyGrad.addColorStop(1, 'rgba(249, 115, 22, 0.24)');
         ctx.fillStyle = frenzyGrad;
         ctx.fillRect(0, 0, w, h);
       }
       if (eng.doubleRemaining > 0) {
-        ctx.strokeStyle = 'rgba(192, 132, 252, 0.55)';
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.58)';
         ctx.lineWidth = 6;
         ctx.strokeRect(3, 3, w - 6, h - 6);
       }
@@ -757,7 +911,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       const meta = FRUIT_META[kind];
 
       if (kind === 'bomb') {
-        // Metallic iron bomb + red warning pulse + burning fuse sparks
         const bodyGrad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.15, 0, 0, r);
         bodyGrad.addColorStop(0, '#4B5563');
         bodyGrad.addColorStop(0.55, '#1F2937');
@@ -767,7 +920,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
 
-        // Warning crimson X
         ctx.strokeStyle = '#EF4444';
         ctx.lineWidth = Math.max(3, r * 0.14);
         ctx.lineCap = 'round';
@@ -779,7 +931,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.lineTo(-xr, xr);
         ctx.stroke();
 
-        // Fuse cap & sizzling spark
         ctx.fillStyle = '#78350F';
         ctx.fillRect(-r * 0.18, -r * 1.12, r * 0.36, r * 0.22);
         ctx.strokeStyle = '#D97706';
@@ -802,7 +953,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       }
 
       if (kind === 'banana_freeze' || kind === 'banana_frenzy' || kind === 'banana_double') {
-        // Curved glowing crescent banana
         ctx.save();
         const glowCol = kind === 'banana_freeze' ? '#38BDF8' : kind === 'banana_frenzy' ? '#FACC15' : '#C084FC';
         ctx.shadowColor = glowCol;
@@ -818,10 +968,9 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.lineWidth = 2.5;
         ctx.stroke();
 
-        // Tag icon text
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = `bold ${Math.round(r * 0.36)}px sans-serif`;
+        ctx.font = `bold ${Math.round(r * 0.34)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(kind === 'banana_freeze' ? 'ICE' : kind === 'banana_frenzy' ? 'FRZ' : '2X', 0, r * 0.16);
         ctx.restore();
@@ -829,7 +978,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       }
 
       if (kind === 'roar_bean') {
-        // Golden Royal ROAR Coffee Bean
         ctx.save();
         ctx.shadowColor = '#FACC15';
         ctx.shadowBlur = 18;
@@ -868,7 +1016,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
 
-        // Crown calyx
         ctx.fillStyle = '#BE123C';
         ctx.beginPath();
         ctx.moveTo(-r * 0.28, -r * 0.88);
@@ -879,7 +1026,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.closePath();
         ctx.fill();
 
-        // Countdown ring
         if (pomRatio !== undefined) {
           ctx.shadowBlur = 0;
           ctx.strokeStyle = '#FDE047';
@@ -892,17 +1038,12 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         return;
       }
 
-      // Standard luscious fruit body
-      const grad = ctx.createRadialGradient(-r * 0.32, -r * 0.32, r * 0.12, 0, 0, r);
-      grad.addColorStop(0, meta.inner);
-      grad.addColorStop(0.28, meta.outer);
-      grad.addColorStop(1, '#0F172A');
+      // Standard fruit body
       ctx.fillStyle = meta.outer;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Subtle glossy highlight
       ctx.fillStyle = 'rgba(255,255,255,0.24)';
       ctx.beginPath();
       ctx.ellipse(-r * 0.3, -r * 0.34, r * 0.32, r * 0.16, -0.5, 0, Math.PI * 2);
@@ -936,11 +1077,9 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.beginPath();
         ctx.ellipse(r * 0.16, -r * 0.92, r * 0.26, r * 0.12, -0.4, 0, Math.PI * 2);
         ctx.fill();
-      } else if (kind === 'orange') {
-        ctx.strokeStyle = 'rgba(255,237,213,0.45)';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+      } else if (kind === 'kiwi') {
+        ctx.strokeStyle = '#422006';
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
     };
@@ -963,13 +1102,11 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
       ctx.fillStyle = meta.outer;
       ctx.fill();
 
-      // Inner juicy cross-section band
       ctx.fillStyle = meta.inner;
       ctx.beginPath();
       ctx.ellipse(0, 0, half.radius * 0.86, half.radius * 0.24, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Seeds on cross-section
       ctx.fillStyle = meta.accent;
       for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
@@ -977,6 +1114,99 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.fill();
       }
       ctx.restore();
+    };
+
+    const drawDojoRingMenu = (ctx: CanvasRenderingContext2D, eng: typeof engineRef.current, nowSec: number) => {
+      const w = eng.width;
+      const h = eng.height;
+      // Top Dojo Title Banner (authentic Fruit Ninja wood-and-gold sign)
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `900 ${w < 480 ? 22 : 30}px sans-serif`;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.lineWidth = 6;
+      const titleText = 'ROAR FRUIT NINJA';
+      ctx.strokeText(titleText, w * 0.5, h * 0.16);
+      ctx.fillStyle = '#F8F5EF';
+      ctx.fillText(titleText, w * 0.5, h * 0.16);
+
+      ctx.font = `700 ${w < 480 ? 11 : 13}px sans-serif`;
+      ctx.fillStyle = '#C6A667';
+      ctx.fillText(
+        tr('VUỐT KIẾM CHẺ TRÁI CÂY ĐỂ VÀO CHƠI · HOẶC BẤM CHỌN', 'SLICE ANY SPINNING FRUIT RING TO START · OR TAP'),
+        w * 0.5,
+        h * 0.24
+      );
+      ctx.restore();
+
+      // Rotating Concentric Dojo Rings + Orbiting Fruits
+      for (const tgt of eng.menuTargets) {
+        ctx.save();
+        ctx.translate(tgt.x, tgt.y);
+
+        // Rotating dashed outer dojo ring
+        ctx.save();
+        ctx.rotate(nowSec * 0.9);
+        ctx.strokeStyle = tgt.ringColor;
+        ctx.lineWidth = 5;
+        ctx.setLineDash([18, 9]);
+        ctx.beginPath();
+        ctx.arc(0, 0, tgt.radius + 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Inner circular emblem label
+        ctx.save();
+        ctx.rotate(-nowSec * 0.6);
+        ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(0, 0, tgt.radius + 6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Spinning fruit in center
+        ctx.save();
+        ctx.rotate(nowSec * 1.4);
+        drawFruitGraphic(ctx, tgt.fruitKind, tgt.radius * 0.68, nowSec);
+        ctx.restore();
+
+        // Mode label cleanly below ring
+        ctx.textAlign = 'center';
+        ctx.font = `900 ${w < 480 ? 12 : 14}px sans-serif`;
+        ctx.fillStyle = tgt.ringColor;
+        ctx.fillText(lang === 'en' ? tgt.labelEn : tgt.labelVi, 0, tgt.radius + 34);
+        ctx.font = `600 ${w < 480 ? 9 : 10}px sans-serif`;
+        ctx.fillStyle = 'rgba(248,245,239,0.75)';
+        ctx.fillText(lang === 'en' ? tgt.subEn : tgt.subVi, 0, tgt.radius + 48);
+
+        ctx.restore();
+      }
+    };
+
+    const drawClassicCrosses = (ctx: CanvasRenderingContext2D, eng: typeof engineRef.current) => {
+      if (eng.mode !== 'classic' || eng.phase === 'ready') return;
+      const misses = Math.max(0, 3 - eng.lives);
+      const startX = eng.width - 26;
+      const y = 26;
+      for (let i = 0; i < 3; i++) {
+        const cx = startX - (2 - i) * 26;
+        const struck = i < misses;
+        ctx.save();
+        ctx.translate(cx, y);
+        ctx.lineWidth = struck ? 4 : 3;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = struck ? '#EF4444' : 'rgba(56, 189, 248, 0.42)';
+        const s = 7;
+        ctx.beginPath();
+        ctx.moveTo(-s, -s);
+        ctx.lineTo(s, s);
+        ctx.moveTo(s, -s);
+        ctx.lineTo(-s, s);
+        ctx.stroke();
+        ctx.restore();
+      }
     };
 
     const tick = (now: number) => {
@@ -992,7 +1222,30 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         ctx.save();
         ctx.scale(dpr, dpr);
 
-        // Physics update during active play
+        // Intro Ready -> Go countdown
+        if (eng.phase === 'intro') {
+          eng.introTimer -= rawDt;
+          if (!eng.introSwitchedToGo && eng.introTimer <= 0.45) {
+            eng.introSwitchedToGo = true;
+            setIntroWord('GO');
+            gameSound.ninjaWhoosh(1.4);
+          }
+          if (eng.introTimer <= 0) {
+            eng.phase = 'playing';
+            setPhase('playing');
+          }
+        }
+
+        // Bomb Freeze slow-motion beam climax before Game Over Scroll
+        if (eng.phase === 'bomb_freeze') {
+          eng.bombFreezeTimer -= rawDt;
+          if (eng.bombFreezeTimer <= 0) {
+            eng.bombFlashAlpha = 1;
+            finishGame('bomb');
+          }
+        }
+
+        // Active Gameplay Physics
         if (eng.phase === 'playing') {
           const timeScale = eng.freezeRemaining > 0 ? 0.44 : 1;
           const dt = rawDt * timeScale;
@@ -1003,7 +1256,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           if (eng.shakeTime > 0) eng.shakeTime = Math.max(0, eng.shakeTime - rawDt);
           if (eng.bombFlashAlpha > 0) eng.bombFlashAlpha = Math.max(0, eng.bombFlashAlpha - rawDt * 2.1);
 
-          // Timer countdown for Zen & Arcade (paused while Frozen!)
           if ((eng.mode === 'zen' || eng.mode === 'arcade') && eng.freezeRemaining <= 0) {
             eng.timeLeft -= rawDt;
             if (eng.timeLeft <= 0) {
@@ -1012,7 +1264,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             }
           }
 
-          // Combo flush window
           if (eng.strokeComboCount > 0) {
             eng.strokeComboTimer -= rawDt;
             if (eng.strokeComboTimer <= 0) {
@@ -1030,14 +1281,13 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
                   `${eng.strokeComboCount} FRUIT BLITZ!`,
                   '#FDE047',
                   1.36,
-                  `+${bonus} ${tr('COMBO', 'COMBO')}`
+                  `+${bonus} COMBO`
                 );
               }
               eng.strokeComboCount = 0;
             }
           }
 
-          // Wave spawning
           eng.spawnCooldown -= dt;
           if (eng.spawnCooldown <= 0) {
             const batchSize =
@@ -1049,7 +1299,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             eng.spawnCooldown = Math.max(0.85, 2.05 - Math.min(0.95, eng.wave * 0.04));
           }
 
-          // Frenzy side barrage spawning
           if (eng.frenzyRemaining > 0) {
             eng.frenzySpawnCooldown -= rawDt;
             if (eng.frenzySpawnCooldown <= 0) {
@@ -1058,7 +1307,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             }
           }
 
-          // Pomegranate Multi-Slash Boss spawn
           eng.pomCooldown -= rawDt;
           if (eng.pomCooldown <= 0 && eng.mode !== 'zen') {
             eng.fruits.push({
@@ -1087,14 +1335,12 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             if (f.sliced) continue;
 
             if (f.kind === 'pomegranate' && f.pomTimer !== undefined) {
-              // Hover dramatically near center while player multi-slashes
               if (f.y <= eng.height * 0.48 && f.pomTimer > 0) {
                 f.pomTimer -= rawDt;
                 f.vy *= 0.85;
                 f.y += f.vy * rawDt;
                 f.rotation += f.vRot * rawDt;
                 if (f.pomTimer <= 0) {
-                  // Detonate Pomegranate and slice all fruits on screen!
                   const hits = f.pomHits || 0;
                   const pomBonus = hits * 8;
                   if (hits > 0) {
@@ -1125,7 +1371,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
               f.enteredScreen = true;
             }
 
-            // Bomb sparks
             if (f.kind === 'bomb' && Math.random() < 0.35) {
               eng.particles.push({
                 x: f.x + Math.cos(f.rotation - Math.PI / 2) * f.radius * 1.1,
@@ -1142,7 +1387,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             }
 
             if (f.y > eng.height + f.radius * 2.2 && f.vy > 0) {
-              // Dropped unsliced normal fruit in Classic costs 1 life
               const isPenaltyFruit =
                 eng.mode === 'classic' &&
                 f.enteredScreen &&
@@ -1166,7 +1410,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           }
           eng.fruits = remainingFruits;
 
-          // Sync lightweight React HUD ~10 times/sec
           eng.hudSyncAccum += rawDt;
           if (eng.hudSyncAccum >= 0.1) {
             eng.hudSyncAccum = 0;
@@ -1181,45 +1424,46 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           }
         }
 
-        // Update halves, particles, splats, callouts, trail even after round ends
+        // Visual particles & halves keep flowing in all phases
         const gravityVisual = eng.width < 460 ? 600 : 660;
-        eng.halves = eng.halves.filter((hf) => {
-          hf.x += hf.vx * rawDt;
-          hf.y += hf.vy * rawDt;
-          hf.vy += gravityVisual * rawDt;
-          hf.rotation += hf.vRot * rawDt;
-          hf.alpha = Math.max(0, hf.alpha - rawDt * 0.45);
-          return hf.y < eng.height + 90 && hf.alpha > 0.02;
-        });
+        if (eng.phase !== 'bomb_freeze') {
+          eng.halves = eng.halves.filter((hf) => {
+            hf.x += hf.vx * rawDt;
+            hf.y += hf.vy * rawDt;
+            hf.vy += gravityVisual * rawDt;
+            hf.rotation += hf.vRot * rawDt;
+            hf.alpha = Math.max(0, hf.alpha - rawDt * 0.45);
+            return hf.y < eng.height + 90 && hf.alpha > 0.02;
+          });
 
-        eng.particles = eng.particles.filter((pt) => {
-          if (pt.kind === 'ring') {
-            pt.radius += ((pt.maxRadius || 60) - pt.radius) * Math.min(1, rawDt * 12);
+          eng.particles = eng.particles.filter((pt) => {
+            if (pt.kind === 'ring') {
+              pt.radius += ((pt.maxRadius || 60) - pt.radius) * Math.min(1, rawDt * 12);
+              pt.alpha -= pt.decay * rawDt;
+              return pt.alpha > 0.02;
+            }
+            pt.x += pt.vx * rawDt;
+            pt.y += pt.vy * rawDt;
+            pt.vy += pt.gravity * rawDt;
             pt.alpha -= pt.decay * rawDt;
             return pt.alpha > 0.02;
-          }
-          pt.x += pt.vx * rawDt;
-          pt.y += pt.vy * rawDt;
-          pt.vy += pt.gravity * rawDt;
-          pt.alpha -= pt.decay * rawDt;
-          return pt.alpha > 0.02;
-        });
+          });
 
-        eng.splats = eng.splats.filter((sp) => {
-          sp.alpha -= rawDt * 0.055;
-          return sp.alpha > 0.02;
-        });
+          eng.splats = eng.splats.filter((sp) => {
+            sp.alpha -= rawDt * 0.055;
+            return sp.alpha > 0.02;
+          });
 
-        eng.callouts = eng.callouts.filter((cl) => {
-          cl.y += cl.vy * rawDt;
-          cl.vy *= 0.94;
-          cl.life -= rawDt;
-          return cl.life > 0;
-        });
+          eng.callouts = eng.callouts.filter((cl) => {
+            cl.y += cl.vy * rawDt;
+            cl.vy *= 0.94;
+            cl.life -= rawDt;
+            return cl.life > 0;
+          });
+        }
 
         eng.trail = eng.trail.filter((pt) => now - pt.time <= 135);
 
-        // Apply screen shake offset
         ctx.save();
         if (eng.shakeTime > 0) {
           const sx = (Math.random() - 0.5) * eng.shakePower;
@@ -1229,7 +1473,12 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
         drawDojoBackground(ctx, eng.width, eng.height, eng);
 
-        // 1. Juice splats on wood
+        // Menu Dojo Ring UI when ready
+        if (eng.phase === 'ready') {
+          drawDojoRingMenu(ctx, eng, nowSec);
+        }
+
+        // Juice splats
         for (const sp of eng.splats) {
           ctx.save();
           ctx.globalAlpha = sp.alpha;
@@ -1252,12 +1501,12 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ctx.restore();
         }
 
-        // 2. Sliced halves
+        // Sliced halves
         for (const hf of eng.halves) {
           drawSlicedHalf(ctx, hf);
         }
 
-        // 3. Active whole fruits
+        // Active fruits
         for (const f of eng.fruits) {
           ctx.save();
           ctx.translate(f.x, f.y);
@@ -1270,7 +1519,27 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ctx.restore();
         }
 
-        // 4. Particles & shockwave rings
+        // Dramatic Original Bomb Radial White-Gold Light Beams!
+        if (eng.phase === 'bomb_freeze') {
+          const progress = 1 - Math.max(0, eng.bombFreezeTimer) / 0.85;
+          ctx.save();
+          ctx.translate(eng.bombCenterX, eng.bombCenterY);
+          const rayCount = 12;
+          for (let i = 0; i < rayCount; i++) {
+            const baseAng = (i * Math.PI * 2) / rayCount + progress * 0.35;
+            const spread = 0.04 + progress * 0.14;
+            ctx.fillStyle = `rgba(255, 250, 235, ${0.45 + progress * 0.5})`;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(baseAng - spread) * 1100, Math.sin(baseAng - spread) * 1100);
+            ctx.lineTo(Math.cos(baseAng + spread) * 1100, Math.sin(baseAng + spread) * 1100);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+
+        // Particles
         for (const pt of eng.particles) {
           ctx.save();
           ctx.globalAlpha = Math.max(0, pt.alpha);
@@ -1289,7 +1558,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ctx.restore();
         }
 
-        // 5. Tapered Glowing Katana Blade Trail
+        // Katana Blade Trail (active in ready menu AND gameplay!)
         if (eng.trail.length >= 2) {
           const bStyle = BLADE_STYLES.find((b) => b.id === eng.bladeId) || BLADE_STYLES[0];
           ctx.save();
@@ -1319,7 +1588,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ctx.restore();
         }
 
-        // 6. Floating Callouts
+        // Callouts
         for (const cl of eng.callouts) {
           const alpha = Math.min(1, cl.life / (cl.maxLife * 0.45));
           ctx.save();
@@ -1342,14 +1611,15 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           ctx.restore();
         }
 
-        // 7. Bomb flash overlay
+        drawClassicCrosses(ctx, eng);
+
         if (eng.bombFlashAlpha > 0.01) {
-          ctx.fillStyle = `rgba(255, 245, 235, ${eng.bombFlashAlpha})`;
+          ctx.fillStyle = `rgba(255, 248, 240, ${eng.bombFlashAlpha})`;
           ctx.fillRect(0, 0, eng.width, eng.height);
         }
 
-        ctx.restore(); // end shake
-        ctx.restore(); // end dpr
+        ctx.restore();
+        ctx.restore();
       }
 
       rafId = window.requestAnimationFrame(tick);
@@ -1357,13 +1627,12 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
-  }, [finishGame, sliceFruit, spawnFruitBurst, tr]);
+  }, [finishGame, lang, sliceFruit, spawnFruitBurst, tr]);
 
-  // Pointer slicing handlers
   const handlePointerSlice = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const eng = engineRef.current;
-    if (!canvas || eng.phase !== 'playing') return;
+    if (!canvas || (eng.phase !== 'playing' && eng.phase !== 'ready')) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -1380,7 +1649,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         gameSound.ninjaWhoosh(Math.min(2.0, dist / 45));
       }
 
-      // Emit blade particles (fire, lightning, frost, emerald)
       if (dist > 10 && Math.random() < 0.7) {
         const bStyle = BLADE_STYLES.find((b) => b.id === eng.bladeId) || BLADE_STYLES[0];
         eng.particles.push({
@@ -1399,11 +1667,23 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
       if (dist >= 4) {
         const cutAngle = Math.atan2(y - prev.y, x - prev.x);
+
+        // Slice-to-Start on the Dojo Ring Menu!
+        if (eng.phase === 'ready') {
+          for (const tgt of eng.menuTargets) {
+            const d = distPointToSegment(tgt.x, tgt.y, prev.x, prev.y, x, y);
+            if (d <= tgt.radius * 0.9) {
+              triggerIntroAndStart(tgt.mode, tgt, cutAngle);
+              return;
+            }
+          }
+          return;
+        }
+
         for (const fruit of eng.fruits) {
           if (fruit.sliced) continue;
           const d = distPointToSegment(fruit.x, fruit.y, prev.x, prev.y, x, y);
           if (d <= fruit.radius * 1.15) {
-            // Avoid double-hitting pomegranate within same tiny frame
             if (fruit.kind === 'pomegranate' && eng.lastWhooshAt && dist < 8) continue;
             sliceFruit(fruit, cutAngle, d / Math.max(1, fruit.radius));
           }
@@ -1412,15 +1692,37 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     }
   };
 
+  // Fallback single tap on Dojo Ring fruit if user clicks instead of swiping
+  const handleCanvasClickFallback = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const eng = engineRef.current;
+    if (!canvas || eng.phase !== 'ready') return;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    for (const tgt of eng.menuTargets) {
+      if (Math.hypot(x - tgt.x, y - tgt.y) <= tgt.radius + 14) {
+        triggerIntroAndStart(tgt.mode, tgt, -0.45);
+        return;
+      }
+    }
+  };
+
   const handleToggleSound = () => {
     gameSound.muted = !gameSound.muted;
     setSoundMuted(gameSound.muted);
-    if (!gameSound.muted) gameSound.tick();
+    if (gameSound.muted) {
+      gameSound.stopDojoBgm();
+      setDojoBgmOn(false);
+    } else {
+      gameSound.tick();
+    }
   };
 
-  const handleToggleLofi = () => {
-    const active = gameSound.toggleLofi();
-    setLofiOn(active);
+  const handleToggleDojoBgm = () => {
+    const active = gameSound.toggleDojoBgm();
+    setDojoBgmOn(active);
+    setSoundMuted(gameSound.muted);
   };
 
   const handleClaimReward = async (useExtraPoints: boolean) => {
@@ -1446,24 +1748,24 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
     onDemoResult(picked);
   };
 
-  const rank = getNinjaRank(bestScore, lang);
+  const rank = getNinjaRank(bestScore);
   const qualifiedForReward = score >= minScoreToWin;
+  const senseiQuote = SENSEI_QUOTES[senseiQuoteIdx] || SENSEI_QUOTES[0];
 
   return (
     <div className="rounded-2xl bg-[#1A0E08] text-[#F8F5EF] border border-[#C6A667]/30 overflow-hidden shadow-lg select-none">
-      {/* Compact Single-Row Dojo Header Bar (Mobile & Desktop friendly) */}
+      {/* Compact Single-Row Dojo Header Bar */}
       <div className="px-3 sm:px-5 py-2.5 bg-[#120905]/95 border-b border-[#C6A667]/20 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <AdaptiveLogo variant="horizontal" surface="dark" size="xs" />
           <span aria-hidden="true" className="text-white/25 text-xs hidden sm:inline">·</span>
           <span className="text-xs font-bold text-[#C6A667] truncate hidden sm:inline">
-            {tr('Fruit Ninja Dojo', 'Fruit Ninja Dojo')}
+            Fruit Ninja Dojo
           </span>
         </div>
 
-        {/* Mode & Blade & Audio Controls */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {/* Mode Selector */}
+          {/* Quick Mode Pills */}
           <div className="flex items-center p-0.5 rounded-lg bg-white/8 border border-white/10 text-[11px] shrink-0">
             {(
               [
@@ -1475,15 +1777,11 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
               <button
                 key={m.id}
                 type="button"
-                onClick={() => {
-                  if (phase === 'playing') {
-                    startRun(m.id);
-                  } else {
-                    setMode(m.id);
-                  }
-                }}
+                onClick={() => triggerIntroAndStart(m.id)}
                 className={`px-2 py-1 rounded-md font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                  mode === m.id ? 'bg-[#C6A667] text-[#111111]' : 'text-white/75 hover:text-white'
+                  mode === m.id && phase !== 'ready'
+                    ? 'bg-[#C6A667] text-[#111111]'
+                    : 'text-white/75 hover:text-white'
                 }`}
               >
                 {m.label}
@@ -1491,7 +1789,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
             ))}
           </div>
 
-          {/* Blade Picker */}
+          {/* Blade Switch */}
           <button
             type="button"
             onClick={() => {
@@ -1513,15 +1811,16 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
 
           <button
             type="button"
-            onClick={handleToggleLofi}
-            aria-label="Toggle Lo-fi BGM"
-            className={`p-1.5 rounded-lg border text-xs cursor-pointer shrink-0 ${
-              lofiOn
+            onClick={handleToggleDojoBgm}
+            title={tr('Nhạc Dojo Shamisen & Taiko', 'Dojo Shamisen & Taiko BGM')}
+            className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer shrink-0 ${
+              dojoBgmOn
                 ? 'bg-[#C6A667] text-[#111111] border-[#C6A667]'
                 : 'bg-white/8 text-white/80 border-white/15 hover:bg-white/15'
             }`}
           >
             <Music className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">{tr('Nhạc Dojo', 'Dojo BGM')}</span>
           </button>
 
           <button
@@ -1535,7 +1834,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         </div>
       </div>
 
-      {/* Ultra-Compact Live Stats Strip (Single Row even on Mobile) */}
+      {/* Compact Single-Row Live Score Strip */}
       <div className="px-3 sm:px-5 py-2 bg-[#1D1009] border-b border-white/10 flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <div>
@@ -1554,7 +1853,6 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           </div>
         </div>
 
-        {/* Active Boosters & Lives/Clock */}
         <div className="flex items-center gap-2 shrink-0">
           {activeEffects.freeze > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 font-mono tabular-nums">
@@ -1595,10 +1893,10 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
         </div>
       </div>
 
-      {/* Main 60fps Interactive Katana Arena Canvas */}
+      {/* Main 60fps Interactive Dojo Canvas */}
       <div
         ref={containerRef}
-        className="relative w-full h-[380px] sm:h-[440px] lg:h-[470px] overflow-hidden touch-none cursor-crosshair"
+        className="relative w-full h-[390px] sm:h-[450px] lg:h-[480px] overflow-hidden touch-none cursor-crosshair"
       >
         <canvas
           ref={canvasRef}
@@ -1610,15 +1908,18 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           }}
           onPointerMove={(e) => {
             if (!engineRef.current.isPointerDown && e.pointerType === 'mouse') {
-              // On desktop allow hold-drag slicing cleanly
               return;
             }
             if (engineRef.current.isPointerDown) {
               handlePointerSlice(e.clientX, e.clientY);
             }
           }}
-          onPointerUp={() => {
+          onPointerUp={(e) => {
+            const wasEmptyTrail = engineRef.current.trail.length <= 2;
             engineRef.current.isPointerDown = false;
+            if (wasEmptyTrail && engineRef.current.phase === 'ready') {
+              handleCanvasClickFallback(e.clientX, e.clientY);
+            }
           }}
           onPointerCancel={() => {
             engineRef.current.isPointerDown = false;
@@ -1626,78 +1927,54 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
           className="w-full h-full block touch-none"
         />
 
-        {/* Ready / Start Dojo Overlay */}
-        {phase === 'ready' && (
-          <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px] flex flex-col items-center justify-center p-5 text-center space-y-4">
-            <div className="space-y-1.5 max-w-md">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#C6A667]">
-                ROAR DOJO · {mode.toUpperCase()} MODE
+        {/* Kinetic "READY... GO!" Transition Slam */}
+        {phase === 'intro' && (
+          <div className="pointer-events-none absolute inset-0 bg-black/35 flex items-center justify-center">
+            <div key={introWord} className="animate-fn-slam text-center">
+              <p className="text-xs font-extrabold tracking-[0.28em] uppercase text-[#C6A667]">
+                {mode.toUpperCase()} DOJO
               </p>
-              <h3 className="text-xl sm:text-2xl font-extrabold text-white">
-                {tr('Chém Trái Cây & Hạt Vàng ROAR', 'Slice Fruits & Golden ROAR Beans')}
-              </h3>
-              <p className="text-xs text-white/80 leading-relaxed">
-                {mode === 'arcade'
-                  ? tr(
-                      '60 giây bùng nổ: săn Chuối Băng Tuyết ❄️, Mưa Trái Cây ⚡, Nhân Đôi x2 🌟 và Lựu Liên Hoàn. Đạt từ ' + minScoreToWin + ' điểm để nhận quà!',
-                      `60s Blitz: slice Freeze, Frenzy & Double-Score Bananas + Pomegranate bosses. Reach ${minScoreToWin} pts to claim rewards!`
-                    )
-                  : mode === 'zen'
-                    ? tr(
-                        '90 giây thư giãn hoàn toàn — không Bom, không mất mạng! Chém combo nhiều quả một lúc để ghi kỷ lục.',
-                        '90s pure chill slicing — zero bombs, zero lives lost. Chain big multi-fruit combos!'
-                      )
-                    : tr(
-                        'Chế độ Cổ Điển 3 mạng: đừng để rơi trái thường và tuyệt đối né Bom cháy ngòi!',
-                        'Classic 3-life survival: don’t drop fruits and dodge sizzling spiked bombs!'
-                      )}
+              <p
+                className={`text-5xl sm:text-6xl font-black tracking-tight drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)] ${
+                  introWord === 'GO' ? 'text-[#FDE047]' : 'text-white'
+                }`}
+              >
+                {introWord === 'GO' ? tr('CHÉM!', 'GO!') : tr('SẴN SÀNG', 'READY...')}
               </p>
             </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-white/85">
-              <span>{tr('Kéo giữ chuột hoặc vuốt ngón tay để chém', 'Drag or swipe across the board to slice')}</span>
-              <span aria-hidden="true">·</span>
-              <span className="text-[#C6A667] font-semibold">
-                {tr(`Mốc quà: ${minScoreToWin}đ`, `Win Goal: ${minScoreToWin} pts`)}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => startRun()}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#00552B] to-[#0D7A43] hover:from-[#006B37] hover:to-[#119250] border border-[#C6A667]/60 text-white font-extrabold text-sm inline-flex items-center gap-2 shadow-lg cursor-pointer transition-transform active:scale-95"
-            >
-              <Play className="w-4 h-4 text-[#C6A667] fill-[#C6A667]" />
-              <span>{tr('Rút Kiếm Bắt Đầu!', 'Draw Blade & Start!')}</span>
-            </button>
           </div>
         )}
 
-        {/* End of Round / Victory & Reward Modal */}
+        {/* Classic Bamboo Scroll Results Screen */}
         {phase === 'ended' && (
-          <div className="absolute inset-0 bg-black/72 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-md rounded-2xl bg-[#18100B] border border-[#C6A667]/45 p-5 text-center space-y-4 shadow-2xl">
-              <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#C6A667]">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4">
+            <div className="animate-fn-scroll w-full max-w-md rounded-2xl bg-gradient-to-b from-[#3E2312] via-[#28150B] to-[#1A0D06] border-2 border-[#C6A667]/65 p-4 sm:p-5 text-center space-y-3.5 shadow-2xl">
+              <div className="border-b border-[#C6A667]/25 pb-3 space-y-1">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-[#C6A667]">
                   {endReason === 'bomb'
-                    ? tr('NỔ BOM DOJO!', 'BOMB DETONATED!')
+                    ? tr('TRÚNG BOM DOJO!', 'BOMB DETONATED!')
                     : qualifiedForReward
-                      ? tr('HOÀN HẢO · ĐỦ ĐIỂM NHẬN QUÀ!', 'VICTORY · REWARD UNLOCKED!')
-                      : tr('HẾT GIỜ!', 'TIME UP!')}
+                      ? tr('HOÀN THÀNH XUẤT SẮC · ĐỦ ĐIỂM QUÀ!', 'DOJO VICTORY · REWARD READY!')
+                      : tr('KẾT THÚC HIỆP ĐẤU', 'ROUND COMPLETE')}
                 </p>
                 <div className="font-mono text-4xl font-black text-white tabular-nums">
                   {score} <span className="text-base font-bold text-[#C6A667]">{tr('điểm', 'pts')}</span>
                 </div>
-                <p className="text-xs text-white/70">
+                <p className="text-xs text-[#F8F5EF]/75 font-mono tabular-nums">
                   {tr(
-                    `Đã chém ${totalSliced} quả · Combo cao nhất: ${maxCombo}x · Kỷ lục: ${bestScore}`,
-                    `Sliced ${totalSliced} · Best Blitz: ${maxCombo}x · Record: ${bestScore}`
+                    `Chém ${totalSliced} quả · Blitz ${maxCombo}x · Kỷ lục ${bestScore}`,
+                    `${totalSliced} sliced · ${maxCombo}x blitz · Best ${bestScore}`
                   )}
                 </p>
               </div>
 
-              {/* Claim Real Reward CTA */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2.5">
+              {/* Sensei Wisdom Parchment Line */}
+              <p className="text-[11px] italic text-[#F8F5EF]/80 px-2 leading-relaxed">
+                “{lang === 'en' ? senseiQuote.en : senseiQuote.vi}” — <span className="text-[#C6A667] not-italic font-semibold">ROAR Sensei</span>
+              </p>
+
+              {/* Claim Reward Box */}
+              <div className="p-3 rounded-xl bg-black/35 border border-white/10 space-y-2">
                 {qualifiedForReward ? (
                   claimedThisRun ? (
                     <p className="text-xs font-bold text-emerald-400">
@@ -1746,7 +2023,7 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
                       <Trophy className="w-4 h-4 text-[#C6A667]" />
                       <span>
                         {tr(
-                          `Đổi ${config.extra_play_cost_points} điểm nhận quà (Đang có ${userPoints}đ)`,
+                          `Đổi ${config.extra_play_cost_points} điểm nhận quà (${userPoints}đ)`,
                           `Redeem ${config.extra_play_cost_points} pts for Reward (${userPoints} pts)`
                         )}
                       </span>
@@ -1755,8 +2032,8 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
                 ) : (
                   <p className="text-xs text-amber-300">
                     {tr(
-                      `Cần đạt tối thiểu ${minScoreToWin} điểm để mở khóa phần thưởng ROAR (còn thiếu ${minScoreToWin - score} điểm).`,
-                      `Reach ${minScoreToWin} pts to unlock ROAR rewards (${minScoreToWin - score} pts needed).`
+                      `Đạt từ ${minScoreToWin} điểm để mở khóa phần thưởng ROAR (thiếu ${minScoreToWin - score} điểm).`,
+                      `Reach ${minScoreToWin} pts to unlock ROAR rewards (${minScoreToWin - score} pts short).`
                     )}
                   </p>
                 )}
@@ -1765,18 +2042,23 @@ export const FruitNinjaGame: React.FC<FruitNinjaGameProps> = ({
               <div className="flex items-center justify-center gap-2">
                 <button
                   type="button"
-                  onClick={() => startRun()}
-                  className="flex-1 py-2.5 rounded-xl bg-white/12 hover:bg-white/20 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => triggerIntroAndStart(mode)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4 text-[#C6A667]" />
-                  <span>{tr('Chơi Lại Ngay', 'Slice Again')}</span>
+                  <span>{tr('Chơi Lại Ngay', 'Retry')}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPhase('ready')}
-                  className="px-4 py-2.5 rounded-xl border border-white/15 text-white/80 hover:text-white text-xs font-semibold cursor-pointer"
+                  onClick={() => {
+                    engineRef.current.phase = 'ready';
+                    engineRef.current.fruits = [];
+                    engineRef.current.halves = [];
+                    setPhase('ready');
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-[#C6A667]/35 text-[#C6A667] hover:bg-white/5 text-xs font-bold cursor-pointer"
                 >
-                  {tr('Đổi chế độ', 'Modes')}
+                  {tr('Võ Đường', 'Dojo Menu')}
                 </button>
               </div>
             </div>

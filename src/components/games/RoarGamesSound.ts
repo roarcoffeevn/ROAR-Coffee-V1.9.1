@@ -240,6 +240,75 @@ class RoarGameSoundEngine {
     return true;
   }
 
+  private dojoTimer: number | null = null;
+  private dojoStep = 0;
+  public dojoBgmActive = false;
+
+  private playDojoBar() {
+    if (!this.dojoBgmActive || this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    // Energetic Japanese Hirajoshi pentatonic shamisen/koto + Taiko pulse (128 BPM 8th-note steps)
+    const melody = [
+      293.66, 0, 349.23, 440.0, 587.33, 0, 523.25, 440.0,
+      392.0, 0, 440.0, 523.25, 440.0, 349.23, 293.66, 0,
+    ];
+    const stepMs = 195;
+    const idx = this.dojoStep % melody.length;
+    this.dojoStep += 1;
+
+    const note = melody[idx];
+    if (note > 0) {
+      // Plucked shamisen string transient
+      this.playTone(note, 0.16, 'triangle', 0.036, 0);
+      this.playTone(note * 2, 0.07, 'sine', 0.015, 0);
+    }
+
+    // Taiko downbeats & hyoshigi woodblock accent
+    if (idx % 4 === 0) {
+      this.playPitchSweep(115, 42, 0.16, 'sine', 0.065, 0);
+    } else if (idx % 4 === 2) {
+      this.playNoiseBurst(0.035, 1900, 'bandpass', 0.025, 0, 1200);
+    }
+    if (idx === 14) {
+      this.playTone(1240, 0.035, 'square', 0.018, stepMs / 2000);
+    }
+  }
+
+  startDojoBgm(): boolean {
+    if (this.dojoBgmActive) return true;
+    if (this.lofiActive) this.stopLofi();
+    if (this.muted) return false;
+    const ctx = this.ensureContext();
+    if (!ctx) return false;
+    this.dojoBgmActive = true;
+    this.dojoStep = 0;
+    this.playDojoBar();
+    this.dojoTimer = window.setInterval(() => {
+      this.playDojoBar();
+    }, 195);
+    return true;
+  }
+
+  stopDojoBgm() {
+    this.dojoBgmActive = false;
+    if (this.dojoTimer !== null) {
+      window.clearInterval(this.dojoTimer);
+      this.dojoTimer = null;
+    }
+  }
+
+  toggleDojoBgm(): boolean {
+    if (this.dojoBgmActive) {
+      this.stopDojoBgm();
+      return false;
+    }
+    if (this.muted) {
+      this.muted = false;
+    }
+    return this.startDojoBgm();
+  }
+
   stopLofi() {
     this.lofiActive = false;
     if (this.lofiTimer !== null) {
@@ -499,6 +568,96 @@ class RoarGameSoundEngine {
     [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
       this.playTone(f, 0.28, 'triangle', 0.07, 0.04 + i * 0.04);
     });
+  }
+
+  dojoGong() {
+    // Authentic bronze temple gong + wooden hyoshigi clapper for Ready/Go transition
+    this.playTone(130.81, 1.15, 'sine', 0.12, 0);
+    this.playTone(196.0, 0.95, 'triangle', 0.055, 0.01);
+    this.playTone(261.63, 0.85, 'sine', 0.04, 0.02);
+    this.playNoiseBurst(0.06, 1650, 'bandpass', 0.06, 0, 900);
+    this.playTone(1180, 0.045, 'square', 0.024, 0.02);
+  }
+
+  dojoScrollOpen() {
+    this.playNoiseBurst(0.16, 2100, 'bandpass', 0.055, 0, 620);
+    this.playTone(587.33, 0.14, 'sine', 0.045, 0.03);
+    this.playTone(880.0, 0.2, 'triangle', 0.05, 0.09);
+  }
+
+  bombRaysPreBlast() {
+    // Dramatic white light-ray surge right before bomb white-out
+    this.playPitchSweep(180, 920, 0.36, 'sawtooth', 0.065, 0);
+    this.playNoiseBurst(0.32, 3400, 'bandpass', 0.08, 0, 900);
+  }
+
+  mergeDrop() {
+    this.playPitchSweep(280, 145, 0.08, 'sine', 0.06, 0);
+  }
+
+  mergePop(tier = 1) {
+    const base = 340 + Math.min(tier, 9) * 65;
+    this.playPitchSweep(base * 0.72, base * 1.4, 0.11, 'sine', 0.08, 0);
+    this.playTone(base, 0.14, 'triangle', 0.07, 0.02);
+    this.playTone(base * 1.5, 0.18, 'sine', 0.05, 0.06);
+    if (tier >= 6) {
+      this.playNoiseBurst(0.14, 2400, 'bandpass', 0.06, 0.02, 700);
+      this.playTone(base * 2, 0.24, 'triangle', 0.055, 0.09);
+    }
+  }
+
+  tileTap() {
+    this.playTone(620, 0.045, 'triangle', 0.06, 0);
+    this.playTone(940, 0.035, 'sine', 0.035, 0.015);
+  }
+
+  tileTripleClear(combo = 1) {
+    const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66];
+    const base = scale[Math.min(Math.max(combo - 1, 0), scale.length - 1)];
+    this.playTone(base, 0.11, 'triangle', 0.07, 0);
+    this.playTone(base * 1.25, 0.13, 'sine', 0.065, 0.045);
+    this.playTone(base * 1.5, 0.2, 'triangle', 0.07, 0.09);
+  }
+
+  liquidPour(pitchIdx = 0) {
+    const base = 420 + (pitchIdx % 6) * 55;
+    this.playNoiseBurst(0.22, 1350, 'bandpass', 0.045, 0, 720);
+    this.playPitchSweep(base, base * 1.48, 0.2, 'sine', 0.055, 0.02);
+    this.playTone(base * 1.6, 0.1, 'sine', 0.04, 0.14);
+  }
+
+  tubeComplete() {
+    this.playTone(987.77, 0.16, 'sine', 0.065, 0);
+    this.playTone(1318.51, 0.24, 'triangle', 0.07, 0.07);
+    this.playTone(1760.0, 0.3, 'sine', 0.05, 0.14);
+  }
+
+  baristaServe(combo = 1) {
+    this.playTone(1318.51, 0.18, 'sine', 0.08, 0);
+    this.playTone(1760.0, 0.22, 'triangle', 0.065, 0.06);
+    if (combo >= 2) {
+      this.playTone(2093.0, 0.26, 'sine', 0.06, 0.12);
+    }
+  }
+
+  baristaWrong() {
+    this.playNoiseBurst(0.18, 2200, 'highpass', 0.05, 0, 900);
+    this.playTone(185, 0.18, 'sawtooth', 0.05, 0.02);
+  }
+
+  boltUnscrew() {
+    this.playPitchSweep(460, 880, 0.09, 'triangle', 0.06, 0);
+    this.playTone(1120, 0.05, 'sine', 0.04, 0.05);
+  }
+
+  boltScrewIn() {
+    this.playPitchSweep(780, 380, 0.08, 'triangle', 0.06, 0);
+    this.playTone(320, 0.06, 'sine', 0.05, 0.04);
+  }
+
+  woodFall() {
+    this.playPitchSweep(190, 72, 0.18, 'triangle', 0.08, 0);
+    this.playNoiseBurst(0.14, 720, 'lowpass', 0.075, 0.01, 200);
   }
 
   toggleLofi(): boolean {

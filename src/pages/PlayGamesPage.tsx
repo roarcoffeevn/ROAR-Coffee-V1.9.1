@@ -9,12 +9,17 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Coffee,
   Coins,
   Copy,
+  CupSoda,
   Disc3,
+  Droplets,
   Gamepad2,
   Gift,
+  Grid3X3,
   HelpCircle,
+  Layers,
   LayoutGrid,
   Lock,
   PackageOpen,
@@ -26,6 +31,7 @@ import {
   Swords,
   Ticket,
   Trophy,
+  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -42,6 +48,9 @@ import type { Product } from '../context/StoreContext';
 import {
   DEFAULT_GAME_CONFIGS,
   DEFAULT_GAME_REWARDS,
+  GAME_CATEGORIES,
+  GAME_CATEGORY_MAP,
+  type GameCategoryKey,
   type GameConfigRecord,
   type GameKey,
   type GameRewardClaimRecord,
@@ -71,6 +80,26 @@ const FruitNinjaGame = React.lazy(() =>
   import('../components/games/FruitNinjaGame').then((m) => ({ default: m.FruitNinjaGame }))
 );
 
+const MergeCupGame = React.lazy(() =>
+  import('../components/games/MergeCupGame').then((m) => ({ default: m.MergeCupGame }))
+);
+
+const TripleTileGame = React.lazy(() =>
+  import('../components/games/TripleTileGame').then((m) => ({ default: m.TripleTileGame }))
+);
+
+const CoffeeLayerSortGame = React.lazy(() =>
+  import('../components/games/CoffeeLayerSortGame').then((m) => ({ default: m.CoffeeLayerSortGame }))
+);
+
+const BaristaRushGame = React.lazy(() =>
+  import('../components/games/BaristaRushGame').then((m) => ({ default: m.BaristaRushGame }))
+);
+
+const WoodBoltsGame = React.lazy(() =>
+  import('../components/games/WoodBoltsGame').then((m) => ({ default: m.WoodBoltsGame }))
+);
+
 interface RecentWinner {
   id: number;
   game_key: GameKey;
@@ -85,6 +114,11 @@ interface RecentWinner {
 
 const VALID_GAME_KEYS: GameKey[] = [
   'wheel',
+  'mergecup',
+  'tripletile',
+  'layersort',
+  'baristarush',
+  'woodbolts',
   'blockblast',
   'cubeaway',
   'candysaga',
@@ -109,12 +143,19 @@ export const PlayGamesPage: React.FC = () => {
       : 'wheel';
 
   const [activeGame, setActiveGame] = useState<GameKey>(initialGame);
+  const [activeCategory, setActiveCategory] = useState<GameCategoryKey>('all');
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [configs, setConfigs] = useState<GameConfigRecord[]>(DEFAULT_GAME_CONFIGS);
   const [rewards, setRewards] = useState<GameRewardRecord[]>(
     DEFAULT_GAME_REWARDS.map((r, idx) => ({ ...r, id: idx + 1 }))
   );
   const [remainingFreeToday, setRemainingFreeToday] = useState<Record<string, number>>({
     wheel: 1,
+    mergecup: 2,
+    tripletile: 2,
+    layersort: 2,
+    baristarush: 2,
+    woodbolts: 2,
     blockblast: 2,
     cubeaway: 2,
     candysaga: 2,
@@ -177,7 +218,18 @@ export const PlayGamesPage: React.FC = () => {
 
   const handleSaveGameProgress = useCallback(
     async (
-      gameKey: 'blockblast' | 'cubeaway' | 'candysaga' | 'fruitninja' | 'memory' | 'harvest',
+      gameKey:
+        | 'blockblast'
+        | 'cubeaway'
+        | 'candysaga'
+        | 'fruitninja'
+        | 'mergecup'
+        | 'tripletile'
+        | 'layersort'
+        | 'baristarush'
+        | 'woodbolts'
+        | 'memory'
+        | 'harvest',
       payload: { currentLevel: number; maxLevel: number; bestScore: number }
     ) => {
       setGameProgressMap((prev) => ({
@@ -208,24 +260,53 @@ export const PlayGamesPage: React.FC = () => {
 
   const gameMetaList: Array<{
     key: GameKey;
+    category: Exclude<GameCategoryKey, 'all'>;
     icon: React.ReactNode;
     shortVi: string;
     shortEn: string;
     tagVi: string;
     tagEn: string;
+    isNew?: boolean;
   }> = [
-    { key: 'wheel', icon: <Disc3 className="w-4 h-4" />, shortVi: 'Vòng Quay', shortEn: 'Lucky Wheel', tagVi: 'Quay trúng quà ngay', tagEn: 'Spin for instant gifts' },
-    { key: 'blockblast', icon: <LayoutGrid className="w-4 h-4" />, shortVi: 'Block Blast', shortEn: 'Block Blast', tagVi: 'Xếp khối nổ combo', tagEn: 'Puzzle block combos' },
-    { key: 'cubeaway', icon: <Box className="w-4 h-4" />, shortVi: 'Cube Away 3D', shortEn: 'Cube Away 3D', tagVi: 'Gỡ khối xoay 360°', tagEn: '360° 3D cube puzzle' },
-    { key: 'candysaga', icon: <Candy className="w-4 h-4" />, shortVi: 'Candy Saga', shortEn: 'Candy Saga', tagVi: 'Nối kẹo sấm chớp', tagEn: 'Match-3 lightning saga' },
-    { key: 'fruitninja', icon: <Swords className="w-4 h-4" />, shortVi: 'Fruit Ninja', shortEn: 'Fruit Ninja', tagVi: 'Chém trái cây Dojo', tagEn: 'Blade slice dojo' },
-    { key: 'shake', icon: <Smartphone className="w-4 h-4" />, shortVi: 'Lắc Điện Thoại', shortEn: 'Shake & Win', tagVi: 'Lắc tay rinh lộc', tagEn: 'Shake for lucky drops' },
-    { key: 'fortune', icon: <ScrollText className="w-4 h-4" />, shortVi: 'Xin Xăm Cà Phê', shortEn: 'Fortune Stick', tagVi: 'Rút quẻ gu cà phê', tagEn: 'Draw coffee fortune' },
-    { key: 'quiz', icon: <HelpCircle className="w-4 h-4" />, shortVi: 'Gu 7 Cá Tính', shortEn: 'Taste Quiz', tagVi: 'Khám phá gu vị', tagEn: 'Find your roast profile' },
-    { key: 'memory', icon: <Brain className="w-4 h-4" />, shortVi: 'Lật Thẻ', shortEn: 'Memory Match', tagVi: 'Thử thách trí nhớ', tagEn: 'Flip & match pairs' },
-    { key: 'harvest', icon: <Sprout className="w-4 h-4" />, shortVi: 'Hứng Hạt', shortEn: 'Harvest', tagVi: 'Hứng hạt cao nguyên', tagEn: 'Catch ripe cherries' },
-    { key: 'mystery', icon: <PackageOpen className="w-4 h-4" />, shortVi: 'Hộp Bí Ẩn', shortEn: 'Mystery Box', tagVi: 'Mở rương săn quà', tagEn: 'Unbox secret rewards' },
+    { key: 'mergecup', category: GAME_CATEGORY_MAP.mergecup, icon: <CupSoda className="w-4 h-4" />, shortVi: 'Merge Cup', shortEn: 'Merge Cup', tagVi: 'Hợp nhất kiểu Suika', tagEn: 'Suika coffee drop', isNew: true },
+    { key: 'tripletile', category: GAME_CATEGORY_MAP.tripletile, icon: <Layers className="w-4 h-4" />, shortVi: 'Triple Tile', shortEn: 'Triple Tile', tagVi: 'Ghép 3 tầng xoắn não', tagEn: '3-tier tile match', isNew: true },
+    { key: 'layersort', category: GAME_CATEGORY_MAP.layersort, icon: <Droplets className="w-4 h-4" />, shortVi: 'Layer Sort', shortEn: 'Layer Sort', tagVi: 'Rót tầng cà phê chill', tagEn: 'ASMR coffee sort', isNew: true },
+    { key: 'baristarush', category: GAME_CATEGORY_MAP.baristarush, icon: <Coffee className="w-4 h-4" />, shortVi: 'Barista Rush', shortEn: 'Barista Rush', tagVi: 'Pha chế tính giờ', tagEn: 'Speed barista rush', isNew: true },
+    { key: 'woodbolts', category: GAME_CATEGORY_MAP.woodbolts, icon: <Wrench className="w-4 h-4" />, shortVi: 'Gỡ Thanh Gỗ', shortEn: 'Wood Bolts', tagVi: 'Tháo ốc vật lý trọng lực', tagEn: 'Gravity nuts & bolts', isNew: true },
+    { key: 'fruitninja', category: GAME_CATEGORY_MAP.fruitninja, icon: <Swords className="w-4 h-4" />, shortVi: 'Fruit Ninja', shortEn: 'Fruit Ninja', tagVi: 'Chém trái cây Dojo', tagEn: 'Blade slice dojo' },
+    { key: 'candysaga', category: GAME_CATEGORY_MAP.candysaga, icon: <Candy className="w-4 h-4" />, shortVi: 'Candy Saga', shortEn: 'Candy Saga', tagVi: 'Nối kẹo sấm chớp', tagEn: 'Match-3 lightning saga' },
+    { key: 'cubeaway', category: GAME_CATEGORY_MAP.cubeaway, icon: <Box className="w-4 h-4" />, shortVi: 'Cube Away 3D', shortEn: 'Cube Away 3D', tagVi: 'Gỡ khối xoay 360°', tagEn: '360° 3D cube puzzle' },
+    { key: 'blockblast', category: GAME_CATEGORY_MAP.blockblast, icon: <LayoutGrid className="w-4 h-4" />, shortVi: 'Block Blast', shortEn: 'Block Blast', tagVi: 'Xếp khối nổ combo', tagEn: 'Puzzle block combos' },
+    { key: 'wheel', category: GAME_CATEGORY_MAP.wheel, icon: <Disc3 className="w-4 h-4" />, shortVi: 'Vòng Quay', shortEn: 'Lucky Wheel', tagVi: 'Quay trúng quà ngay', tagEn: 'Spin for instant gifts' },
+    { key: 'shake', category: GAME_CATEGORY_MAP.shake, icon: <Smartphone className="w-4 h-4" />, shortVi: 'Lắc Điện Thoại', shortEn: 'Shake & Win', tagVi: 'Lắc tay rinh lộc', tagEn: 'Shake for lucky drops' },
+    { key: 'fortune', category: GAME_CATEGORY_MAP.fortune, icon: <ScrollText className="w-4 h-4" />, shortVi: 'Xin Xăm Cà Phê', shortEn: 'Fortune Stick', tagVi: 'Rút quẻ gu cà phê', tagEn: 'Draw coffee fortune' },
+    { key: 'quiz', category: GAME_CATEGORY_MAP.quiz, icon: <HelpCircle className="w-4 h-4" />, shortVi: 'Gu 7 Cá Tính', shortEn: 'Taste Quiz', tagVi: 'Khám phá gu vị', tagEn: 'Find your roast profile' },
+    { key: 'memory', category: GAME_CATEGORY_MAP.memory, icon: <Brain className="w-4 h-4" />, shortVi: 'Lật Thẻ', shortEn: 'Memory Match', tagVi: 'Thử thách trí nhớ', tagEn: 'Flip & match pairs' },
+    { key: 'harvest', category: GAME_CATEGORY_MAP.harvest, icon: <Sprout className="w-4 h-4" />, shortVi: 'Hứng Hạt', shortEn: 'Harvest', tagVi: 'Hứng hạt cao nguyên', tagEn: 'Catch ripe cherries' },
+    { key: 'mystery', category: GAME_CATEGORY_MAP.mystery, icon: <PackageOpen className="w-4 h-4" />, shortVi: 'Hộp Bí Ẩn', shortEn: 'Mystery Box', tagVi: 'Mở rương săn quà', tagEn: 'Unbox secret rewards' },
   ];
+
+  const filteredGames = useMemo(
+    () =>
+      activeCategory === 'all'
+        ? gameMetaList
+        : gameMetaList.filter((g) => g.category === activeCategory),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeCategory]
+  );
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<GameCategoryKey, number> = {
+      all: gameMetaList.length,
+      action: 0,
+      puzzle: 0,
+      brain: 0,
+      lucky: 0,
+    };
+    for (const g of gameMetaList) counts[g.category] += 1;
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const firstTrackRefs = useRef<Partial<Record<GameKey, HTMLButtonElement | null>>>({});
@@ -237,19 +318,26 @@ export const PlayGamesPage: React.FC = () => {
   useEffect(() => {
     const el = carouselRef.current;
     if (!el) return;
+    el.scrollLeft = 0;
+    floatScrollRef.current = 0;
+
     const reducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reducedMotion) return;
 
-    floatScrollRef.current = el.scrollLeft;
     let rafId = 0;
     let lastTs = performance.now();
 
     const tick = (now: number) => {
       const dt = Math.min(48, Math.max(0, now - lastTs));
       lastTs = now;
-      if (!carouselPaused && !isInteractingRef.current && now >= pauseUntilRef.current) {
+      if (
+        !carouselPaused &&
+        !isInteractingRef.current &&
+        now >= pauseUntilRef.current &&
+        el.scrollWidth > el.clientWidth + 4
+      ) {
         const half = el.scrollWidth / 2;
         if (half > 0) {
           floatScrollRef.current += dt * 0.036; // ~36px/sec silky glide
@@ -266,7 +354,7 @@ export const PlayGamesPage: React.FC = () => {
 
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
-  }, [carouselPaused]);
+  }, [carouselPaused, activeCategory]);
 
   const selectGameFromCarousel = useCallback((key: GameKey) => {
     pauseUntilRef.current = performance.now() + 3500;
@@ -290,6 +378,22 @@ export const PlayGamesPage: React.FC = () => {
       return () => window.clearTimeout(timer);
     }
   }, [requestedGameParam]);
+
+  const handleSelectCategory = useCallback(
+    (cat: GameCategoryKey) => {
+      setActiveCategory(cat);
+      if (carouselRef.current) {
+        carouselRef.current.scrollLeft = 0;
+        floatScrollRef.current = 0;
+      }
+      if (cat !== 'all' && GAME_CATEGORY_MAP[activeGame] !== cat) {
+        const firstInCat = gameMetaList.find((g) => g.category === cat);
+        if (firstInCat) setActiveGame(firstInCat.key);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeGame]
+  );
 
   const stepCarousel = useCallback((dir: -1 | 1) => {
     const el = carouselRef.current;
@@ -412,7 +516,7 @@ export const PlayGamesPage: React.FC = () => {
 
   return (
     <div className="min-h-screen overflow-x-clip bg-[#F8F5EF] dark:bg-[#0E1512] text-[#202020] dark:text-[#F1EFEA] pb-24 lg:pb-20">
-      {/* Ultra-Compact Emerald Header + Live Auto-Gliding 10-Game Carousel */}
+      {/* Compact Emerald Header + Category Tabs + Auto-Running Filtered Carousel */}
       <section className="bg-[#003D25] text-[#F8F5EF] border-b border-[#C6A667]/25">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -427,7 +531,20 @@ export const PlayGamesPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCatalogOpen((o) => !o)}
+                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                  catalogOpen
+                    ? 'bg-[#C6A667] text-[#111111] border-[#FDE68A]'
+                    : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
+                }`}
+              >
+                <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
+                <span>{catalogOpen ? t('Đóng danh mục', 'Close Grid') : t('Phân loại & Tìm nhanh', 'Browse All 16')}</span>
+              </button>
+
               {user ? (
                 <div className="px-2.5 py-1 rounded-lg bg-white/10 border border-[#C6A667]/35 inline-flex items-center gap-1.5">
                   <Coins className="w-3.5 h-3.5 text-[#C6A667] shrink-0" />
@@ -447,6 +564,84 @@ export const PlayGamesPage: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Segmented Category Filter Row */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            {GAME_CATEGORIES.map((cat) => {
+              const isCatActive = activeCategory === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => handleSelectCategory(cat.key)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer transition-colors border ${
+                    isCatActive
+                      ? 'bg-[#C6A667] text-[#111111] border-[#FDE68A]'
+                      : 'bg-black/25 text-white/80 border-white/10 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <span>{lang === 'en' ? cat.labelEn : cat.labelVi}</span>
+                  <span className={`font-mono text-[10px] tabular-nums ${isCatActive ? 'text-[#111111]/75' : 'text-[#C6A667]'}`}>
+                    {categoryCounts[cat.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Expandable Full Categorized Directory (16 Games Quick-Pick) */}
+          {catalogOpen && (
+            <div className="p-3 rounded-xl bg-[#002818] border border-[#C6A667]/30 space-y-3">
+              {GAME_CATEGORIES.filter((c) => c.key !== 'all').map((cat) => {
+                const items = gameMetaList.filter((g) => g.category === cat.key);
+                return (
+                  <div key={cat.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-bold text-[#C6A667]">
+                        {lang === 'en' ? cat.labelEn : cat.labelVi} · {items.length}
+                      </span>
+                      <span className="text-white/55 hidden sm:inline truncate">
+                        {lang === 'en' ? cat.descEn : cat.descVi}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+                      {items.map((g) => {
+                        const selected = activeGame === g.key;
+                        return (
+                          <button
+                            key={g.key}
+                            type="button"
+                            onClick={() => {
+                              setActiveCategory(cat.key);
+                              selectGameFromCarousel(g.key);
+                              setCatalogOpen(false);
+                            }}
+                            className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-colors cursor-pointer ${
+                              selected
+                                ? 'bg-[#C6A667] text-[#111111] border-[#FDE68A]'
+                                : 'bg-white/[0.06] hover:bg-white/[0.14] text-white border-white/10'
+                            }`}
+                          >
+                            <span className={selected ? 'text-[#111111] shrink-0' : 'text-[#C6A667] shrink-0'}>
+                              {g.icon}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-bold truncate">
+                                {lang === 'en' ? g.shortEn : g.shortVi}
+                              </div>
+                              <div className={`text-[10px] truncate ${selected ? 'text-[#111111]/70' : 'text-white/60'}`}>
+                                {lang === 'en' ? g.tagEn : g.tagVi}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Single-Row Auto-Running Game Carousel */}
           <div
@@ -494,12 +689,12 @@ export const PlayGamesPage: React.FC = () => {
                 }}
                 className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5"
               >
-                {[...gameMetaList, ...gameMetaList].map((g, dupIdx) => {
+                {[...filteredGames, ...filteredGames].map((g, dupIdx) => {
                   const cfg = configs.find((c) => c.game_key === g.key);
                   const isSelected = activeGame === g.key;
                   const freeLeft = remainingFreeToday[g.key] ?? 0;
-                  const isPrimaryCopy = dupIdx < gameMetaList.length;
-                  const gameNum = (dupIdx % gameMetaList.length) + 1;
+                  const isPrimaryCopy = dupIdx < filteredGames.length;
+                  const gameNum = (dupIdx % filteredGames.length) + 1;
                   return (
                     <button
                       key={`${g.key}-${dupIdx}`}
@@ -522,6 +717,11 @@ export const PlayGamesPage: React.FC = () => {
                     >
                       <span className={isSelected ? 'text-[#111111]' : 'text-[#C6A667]'}>{g.icon}</span>
                       <span className="text-xs">{lang === 'en' ? g.shortEn : g.shortVi}</span>
+                      {g.isNew && !isSelected && (
+                        <span className="text-[9px] font-black text-emerald-300 uppercase">
+                          {t('Mới', 'New')}
+                        </span>
+                      )}
                       {user && cfg?.active !== 0 ? (
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums ${
@@ -757,6 +957,116 @@ export const PlayGamesPage: React.FC = () => {
                   savedProgress={gameProgressMap.fruitninja}
                   onSaveProgress={(p) => handleSaveGameProgress('fruitninja', p)}
                   onPlayReal={(useExtra, score) => handlePlayReal('fruitninja', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'mergecup' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#1B120C] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang khởi tạo ROAR Merge Cup...', 'Loading ROAR Merge Cup...')}
+                  </div>
+                }
+              >
+                <MergeCupGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.mergecup ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.mergecup}
+                  onSaveProgress={(p) => handleSaveGameProgress('mergecup', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('mergecup', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'tripletile' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#0E2B1E] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang khởi tạo ROAR Triple Tile...', 'Loading ROAR Triple Tile...')}
+                  </div>
+                }
+              >
+                <TripleTileGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.tripletile ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.tripletile}
+                  onSaveProgress={(p) => handleSaveGameProgress('tripletile', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('tripletile', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'layersort' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#0E2430] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang khởi tạo Coffee Layer Sort...', 'Loading Coffee Layer Sort...')}
+                  </div>
+                }
+              >
+                <CoffeeLayerSortGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.layersort ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.layersort}
+                  onSaveProgress={(p) => handleSaveGameProgress('layersort', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('layersort', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'baristarush' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#2A1910] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang mở quầy Good Barista Rush...', 'Opening Good Barista Rush...')}
+                  </div>
+                }
+              >
+                <BaristaRushGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.baristarush ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.baristarush}
+                  onSaveProgress={(p) => handleSaveGameProgress('baristarush', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('baristarush', useExtra, score)}
+                  onRequireLogin={() => navigate(localePath('/account'))}
+                  onDemoResult={handleDemoResult}
+                />
+              </React.Suspense>
+            ) : activeGame === 'woodbolts' ? (
+              <React.Suspense
+                fallback={
+                  <div className="h-[420px] rounded-2xl bg-[#2E1B11] text-white flex items-center justify-center text-sm font-bold">
+                    {t('Đang khởi tạo bàn gỗ Wood Bolts...', 'Loading Wood Nuts & Bolts...')}
+                  </div>
+                }
+              >
+                <WoodBoltsGame
+                  lang={lang}
+                  config={currentConfig}
+                  rewards={currentRewards}
+                  remainingFreeToday={remainingFreeToday.woodbolts ?? 0}
+                  isSignedIn={Boolean(user)}
+                  userPoints={userAvailablePts}
+                  savedProgress={gameProgressMap.woodbolts}
+                  onSaveProgress={(p) => handleSaveGameProgress('woodbolts', p)}
+                  onPlayReal={(useExtra, score) => handlePlayReal('woodbolts', useExtra, score)}
                   onRequireLogin={() => navigate(localePath('/account'))}
                   onDemoResult={handleDemoResult}
                 />
