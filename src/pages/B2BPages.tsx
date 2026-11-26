@@ -1,16 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Check, Coffee, Globe2, Package } from 'lucide-react';
 import { AdminPageEditLink } from '../components/AdminPageEditBar';
 import { B2BInquiryModal } from '../components/B2BInquiryModal';
+import { CafeMarginCalculator } from '../components/CafeMarginCalculator';
 import { useI18n } from '../i18n/I18nContext';
-import { useStore } from '../context/StoreContext';
+import { type Product, useStore } from '../context/StoreContext';
+import { fetchProductsWithFallback } from '../lib/staticFallback';
 
 export const PartnersPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
   const { cmsPages } = useStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'wholesale_partner' | 'green_quotation' | 'sample_request'>('wholesale_partner');
+  const [b2bProducts, setB2bProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    fetchProductsWithFallback(new URLSearchParams({ category: 'roasted_beans' }))
+      .then((list) => setB2bProducts(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  }, []);
 
   const page = cmsPages['partners'];
   const j1 = page?.sections?.[0];
@@ -149,6 +158,8 @@ export const PartnersPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {b2bProducts.length > 0 && <CafeMarginCalculator products={b2bProducts} />}
 
       <B2BInquiryModal open={modalOpen} onClose={() => setModalOpen(false)} defaultType={modalType} />
     </div>

@@ -1620,6 +1620,24 @@ app.get('/api/promotions', (_req, res) => {
   res.json({ promotions: rows });
 });
 
+app.get('/api/combos', (_req, res) => {
+  const rows = db
+    .prepare('SELECT * FROM combos WHERE active = 1 ORDER BY is_featured DESC, sort_order ASC, id ASC')
+    .all() as any[];
+  const combos = rows.map((r) => ({
+    ...r,
+    productSlugs: (() => {
+      try {
+        const parsed = JSON.parse(r.product_slugs_json || '[]');
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        return [];
+      }
+    })(),
+  }));
+  res.json({ combos });
+});
+
 function maskGiftDispatches(rows: any[]): any[] {
   return rows.map((row) =>
     row && row.status === 'pending_payment'
@@ -2271,13 +2289,27 @@ app.post('/api/orders', (req: AuthedRequest, res) => {
       );
     }
 
+    const orderGameBonusPoints = subtotal >= 100000 ? 40 : 0;
+    if (orderGameBonusPoints > 0) {
+      db.prepare(`
+        INSERT INTO points_ledger (user_id, order_id, entry_type, points, description_vi, description_en)
+        VALUES (?, ?, 'earn_available', ?, ?, ?)
+      `).run(
+        effectiveUserId,
+        orderId,
+        orderGameBonusPoints,
+        `Thưởng +${orderGameBonusPoints} điểm ROAR Play (đổi +2 lượt chơi 16 Mini-Game) từ đơn ${orderNumber}`,
+        `Instant +${orderGameBonusPoints} ROAR Play bonus points (+2 Mini-Game plays) from order ${orderNumber}`
+      );
+    }
+
     createUserNotification(effectiveUserId, {
       titleVi: `Đã tiếp nhận đơn hàng ${orderNumber}`,
       titleEn: `Order ${orderNumber} received`,
-      messageVi: `Đơn hàng trị giá ${total.toLocaleString('vi-VN')} ₫ đang chờ Quản trị viên ROAR xác nhận và chuẩn bị hàng.`,
-      messageEn: `Your order totaling ${total.toLocaleString('en-US')} VND is awaiting confirmation and preparation.`,
+      messageVi: `Đơn hàng trị giá ${total.toLocaleString('vi-VN')} ₫ đang chờ xác nhận.${orderGameBonusPoints > 0 ? ` Bạn được tặng ngay +${orderGameBonusPoints} điểm ROAR (+2 lượt chơi Mini-Game).` : ''}`,
+      messageEn: `Your order totaling ${total.toLocaleString('en-US')} VND is awaiting confirmation.${orderGameBonusPoints > 0 ? ` +${orderGameBonusPoints} instant ROAR Play points (+2 Mini-Game plays) credited.` : ''}`,
       category: 'order',
-      linkUrl: '/account?tab=orders',
+      linkUrl: '/play',
     });
 
     return {
@@ -2289,6 +2321,7 @@ app.post('/api/orders', (req: AuthedRequest, res) => {
         discountAmount,
         pointsDiscount,
         shippingFee,
+        orderBonusPoints: orderGameBonusPoints,
         paymentMethod: String(paymentMethod || 'cod'),
         customerEmail: String(customerEmail).trim().toLowerCase(),
         invoiceInfo: requireInvoice
@@ -3863,6 +3896,130 @@ app.patch('/api/admin/promotions/:id', requirePermission('promotions'), (req: Au
   const { active } = req.body || {};
   db.prepare('UPDATE promotions SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
   logAudit(req.authUser!.userId, req.authUser!.email, 'TOGGLE_PROMOTION', 'promotion', id, { active });
+  scheduleSnapshotSync(db);
+  res.json({ ok: true });
+});
+
+// ---------- ADMIN COMBOS MANAGEMENT ----------
+function mapComboRow(row: any) {
+  let productSlugs: string[] = [];
+  try {
+    const parsed = JSON.parse(row.product_slugs_json || '[]');
+    if (Array.isArray(parsed)) productSlugs = parsed.map((s) => String(s));
+  } catch {
+    productSlugs = [];
+  }
+  return { ...row, productSlugs };
+}
+
+app.get('/api/admin/combos', requirePermission('products', 'promotions'), (_req, res) => {
+  const rows = db.prepare('SELECT * FROM combos ORDER BY sort_order ASC, id DESC').all() as any[];
+  res.json({ combos: rows.map(mapComboRow) });
+});
+
+app.post('/api/admin/combos', requirePermission('products', 'promotions'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const titleVi = String(b.title_vi || '').trim().slice(0, 160);
+  const titleEn = String(b.title_en || '').trim().slice(0, 160);
+  const productSlugs = Array.isArray(b.productSlugs)
+    ? b.productSlugs.map((s: any) => String(s).trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  if (!titleVi || !titleEn || productSlugs.length === 0) {
+    res.status(400).json({ error: 'Vui lòng nhập tên Combo song ngữ và chọn ít nhất 1 sản phẩm.' });
+    return;
+  }
+
+  const rawSlug = String(b.slug || titleEn || `combo-${Date.now()}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 80);
+  const slug = rawSlug || `combo-${Date.now()}`;
+  const exists = db.prepare('SELECT id FROM combos WHERE slug = ?').get(slug);
+  const finalSlug = exists ? `${slug}-${Date.now().toString(36).slice(-4)}` : slug;
+
+  const discountPct = Math.max(0, Math.min(50, Math.round(Number(b.discount_pct ?? 12))));
+  const promoCode = String(b.promo_code || 'ROARCOMBO12').trim().toUpperCase().slice(0, 40);
+  const badgeText = String(b.badge_text || `${promoCode || 'COMBO'} · -${discountPct}%`).trim().slice(0, 60);
+  const sortOrder = Math.max(0, Math.round(Number(b.sort_order ?? 10)));
+
+  const result = db
+    .prepare(`
+      INSERT INTO combos (slug, title_vi, title_en, desc_vi, desc_en, badge_text, discount_pct, promo_code, product_slugs_json, active, is_featured, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      finalSlug,
+      titleVi,
+      titleEn,
+      String(b.desc_vi || '').trim().slice(0, 400),
+      String(b.desc_en || '').trim().slice(0, 400),
+      badgeText,
+      discountPct,
+      promoCode,
+      JSON.stringify(productSlugs),
+      b.active === false || b.active === 0 ? 0 : 1,
+      b.is_featured === false || b.is_featured === 0 ? 0 : 1,
+      sortOrder
+    );
+
+  const createdId = Number(result.lastInsertRowid);
+  logAudit(req.authUser!.userId, req.authUser!.email, 'CREATE_COMBO', 'combo', createdId, { slug: finalSlug, discountPct });
+  scheduleSnapshotSync(db);
+  const row = db.prepare('SELECT * FROM combos WHERE id = ?').get(createdId);
+  res.status(201).json({ ok: true, combo: mapComboRow(row) });
+});
+
+app.patch('/api/admin/combos/:id', requirePermission('products', 'promotions'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM combos WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Combo not found' });
+    return;
+  }
+  const b = req.body || {};
+  const titleVi = b.title_vi !== undefined ? String(b.title_vi).trim().slice(0, 160) : existing.title_vi;
+  const titleEn = b.title_en !== undefined ? String(b.title_en).trim().slice(0, 160) : existing.title_en;
+  const descVi = b.desc_vi !== undefined ? String(b.desc_vi).trim().slice(0, 400) : existing.desc_vi;
+  const descEn = b.desc_en !== undefined ? String(b.desc_en).trim().slice(0, 400) : existing.desc_en;
+  const discountPct =
+    b.discount_pct !== undefined
+      ? Math.max(0, Math.min(50, Math.round(Number(b.discount_pct))))
+      : Number(existing.discount_pct);
+  const promoCode =
+    b.promo_code !== undefined ? String(b.promo_code).trim().toUpperCase().slice(0, 40) : existing.promo_code;
+  const badgeText =
+    b.badge_text !== undefined ? String(b.badge_text).trim().slice(0, 60) : existing.badge_text;
+  const productSlugsJson = Array.isArray(b.productSlugs)
+    ? JSON.stringify(b.productSlugs.map((s: any) => String(s).trim()).filter(Boolean).slice(0, 8))
+    : existing.product_slugs_json;
+  const active = b.active !== undefined ? (b.active ? 1 : 0) : existing.active;
+  const isFeatured = b.is_featured !== undefined ? (b.is_featured ? 1 : 0) : existing.is_featured;
+  const sortOrder = b.sort_order !== undefined ? Math.max(0, Math.round(Number(b.sort_order))) : existing.sort_order;
+
+  db.prepare(`
+    UPDATE combos
+    SET title_vi = ?, title_en = ?, desc_vi = ?, desc_en = ?, badge_text = ?, discount_pct = ?, promo_code = ?,
+        product_slugs_json = ?, active = ?, is_featured = ?, sort_order = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(titleVi, titleEn, descVi, descEn, badgeText, discountPct, promoCode, productSlugsJson, active, isFeatured, sortOrder, id);
+
+  logAudit(req.authUser!.userId, req.authUser!.email, 'UPDATE_COMBO', 'combo', id, { active, discountPct });
+  scheduleSnapshotSync(db);
+  const row = db.prepare('SELECT * FROM combos WHERE id = ?').get(id);
+  res.json({ ok: true, combo: mapComboRow(row) });
+});
+
+app.delete('/api/admin/combos/:id', requirePermission('products', 'promotions'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT id, slug FROM combos WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Combo not found' });
+    return;
+  }
+  db.prepare('DELETE FROM combos WHERE id = ?').run(id);
+  logAudit(req.authUser!.userId, req.authUser!.email, 'DELETE_COMBO', 'combo', id, { slug: existing.slug });
   scheduleSnapshotSync(db);
   res.json({ ok: true });
 });

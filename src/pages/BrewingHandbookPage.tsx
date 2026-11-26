@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BookOpen, Clock, Coffee, Droplets, Search, ShoppingBag, Sparkles, Thermometer } from 'lucide-react';
 import { MediaImage } from '../components/MediaImage';
+import { BrewTimerCalculator } from '../components/BrewTimerCalculator';
 import { useI18n } from '../i18n/I18nContext';
 import { type Product, useStore } from '../context/StoreContext';
 import { fetchProductsWithFallback } from '../lib/staticFallback';
@@ -458,6 +459,9 @@ export const BrewingHandbookPage: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* Interactive Barista Brew Timer & Water Ratio Calculator */}
+      <BrewTimerCalculator products={Object.values(productsBySlug)} />
 
       {/* 15-Guide Grid with Integrated ROAR Coffee Upsells */}
       {filteredArticles.length === 0 ? (

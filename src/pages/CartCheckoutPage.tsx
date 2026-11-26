@@ -11,6 +11,7 @@ import {
   FileText,
   Gamepad2,
   Gift,
+  Heart,
   MapPin,
   Minus,
   Package,
@@ -19,7 +20,9 @@ import {
   QrCode,
   RefreshCw,
   ShieldCheck,
+  ShoppingBag,
   Smartphone,
+  Sparkles,
   Tag,
   Trash2,
   Truck,
@@ -28,12 +31,12 @@ import {
 import { MediaImage } from '../components/MediaImage';
 import { RecentlyViewedStrip } from '../components/RecentlyViewedStrip';
 import { useI18n } from '../i18n/I18nContext';
-import { useStore } from '../context/StoreContext';
+import { type Product, useStore } from '../context/StoreContext';
 import { localizeOrderStatus, localizePaymentStatus, localizeVariantLabel } from '../lib/i18nHelpers';
-import { calculateShippingFee } from '../lib/pricing';
+import { calculateShippingFee, resolveVolumeTier } from '../lib/pricing';
 import { printOrderInvoice } from '../lib/printDocuments';
 import { buildLiveShippingTracking, type LiveShippingTracking } from '../lib/shippingTracking';
-import { fetchPromotionsWithFallback } from '../lib/staticFallback';
+import { fetchProductsWithFallback, fetchPromotionsWithFallback } from '../lib/staticFallback';
 
 interface PaymentMethodOption {
   id: string;
@@ -430,100 +433,663 @@ const PaymentQRPanel: React.FC<{
   );
 };
 
+const CART_TIER1_FREESHIP_VND = 500000;
+const CART_TIER2_GIFT_VND = 900000;
+
 export const CartPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
-  const { cart, updateCartQty, removeFromCart, cartSubtotalVnd, formatPrice, settings } = useStore();
+  const {
+    cart,
+    addToCart,
+    updateCartQty,
+    removeFromCart,
+    cartSubtotalVnd,
+    formatPrice,
+    currency,
+    setCurrency,
+    settings,
+    wishlist,
+    toggleWishlist,
+    activeGameClaims,
+    pendingVoucherCode,
+    setPendingVoucherCode,
+    apiFetch,
+    showToast,
+    user,
+  } = useStore();
+
+  const [upsellCatalog, setUpsellCatalog] = useState<Product[]>([]);
+  const [promoList, setPromoList] = useState<any[]>([]);
+  const [voucherInput, setVoucherInput] = useState(pendingVoucherCode || '');
+  const [previewDiscountVnd, setPreviewDiscountVnd] = useState(0);
+  const [previewVoucherType, setPreviewVoucherType] = useState('');
+  const [previewVoucherMsg, setPreviewVoucherMsg] = useState('');
+
+  useEffect(() => {
+    fetchProductsWithFallback(new URLSearchParams())
+      .then((list) => {
+        setUpsellCatalog((list || []).filter((p) => p.category !== 'green_bean' && p.status === 'active'));
+      })
+      .catch(() => {});
+    fetchPromotionsWithFallback()
+      .then((list) => setPromoList(list || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (pendingVoucherCode && !voucherInput) {
+      setVoucherInput(pendingVoucherCode);
+    }
+  }, [pendingVoucherCode, voucherInput]);
+
+  useEffect(() => {
+    if (!pendingVoucherCode || cartSubtotalVnd <= 0) {
+      setPreviewDiscountVnd(0);
+      setPreviewVoucherType('');
+      setPreviewVoucherMsg('');
+      return;
+    }
+    let cancelled = false;
+    apiFetch('/api/promotions/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: pendingVoucherCode, subtotal: cartSubtotalVnd }),
+    })
+      .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
+      .then(({ ok, d }) => {
+        if (cancelled) return;
+        if (ok && d?.valid) {
+          const dtype = String(d.promo?.discount_type || '');
+          setPreviewVoucherType(dtype);
+          setPreviewDiscountVnd(Number(d.discountAmount || 0));
+          if (dtype === 'free_shipping') {
+            setPreviewVoucherMsg(t(`Đã áp dụng ${d.promo.code} · Miễn phí vận chuyển`, `Applied ${d.promo.code} · Free Shipping`));
+          } else if (dtype === 'product_gift') {
+            setPreviewVoucherMsg(t(`Đã đính kèm quà tặng (${d.promo.code})`, `Gift included (${d.promo.code})`));
+          } else {
+            setPreviewVoucherMsg(t(`Giảm ${formatPrice(Number(d.discountAmount || 0))} (${d.promo.code})`, `Saved ${formatPrice(Number(d.discountAmount || 0))} (${d.promo.code})`));
+          }
+        } else {
+          setPreviewVoucherType('');
+          setPreviewDiscountVnd(0);
+          setPreviewVoucherMsg(d?.error || t('Mã chưa đủ điều kiện đơn tối thiểu', 'Minimum order requirement not met yet'));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingVoucherCode, cartSubtotalVnd, apiFetch, formatPrice, t]);
+
   const cartShipping = calculateShippingFee(cartSubtotalVnd, settings);
+  const effectiveShippingFee = previewVoucherType === 'free_shipping' ? 0 : cartShipping.feeVnd;
+  const effectiveDiscount =
+    previewVoucherType === 'free_shipping' || previewVoucherType === 'product_gift' ? 0 : previewDiscountVnd;
+  const estimatedGrandTotal = Math.max(0, cartSubtotalVnd - effectiveDiscount + effectiveShippingFee);
+
+  const freeShipRemaining = Math.max(0, CART_TIER1_FREESHIP_VND - cartSubtotalVnd);
+  const giftTierRemaining = Math.max(0, CART_TIER2_GIFT_VND - cartSubtotalVnd);
+  const progressPct = Math.min(100, Math.round((cartSubtotalVnd / CART_TIER2_GIFT_VND) * 100));
+  const totalUnitQty = cart.reduce((acc, item) => acc + item.quantity, 0);
+  const estEarnPoints = Math.floor(Math.max(0, cartSubtotalVnd - effectiveDiscount) / 10000);
+
+  const upsellPicks = useMemo(() => {
+    if (upsellCatalog.length === 0) return [];
+    const cartIds = new Set(cart.map((c) => c.productId));
+    const candidates = upsellCatalog.filter((p) => !cartIds.has(p.id) && p.sub_category !== 'Gift Voucher');
+    return [...candidates]
+      .sort((a, b) => {
+        const pa = a.variants?.[0]?.priceVnd || a.price_vnd;
+        const pb = b.variants?.[0]?.priceVnd || b.price_vnd;
+        if (freeShipRemaining > 0) {
+          return Math.abs(pa - freeShipRemaining) - Math.abs(pb - freeShipRemaining);
+        }
+        return (b.featured || 0) - (a.featured || 0) || pa - pb;
+      })
+      .slice(0, 4);
+  }, [upsellCatalog, cart, freeShipRemaining]);
+
+  const quickVoucherChips = useMemo(() => {
+    const items: Array<{ code: string; label: string; isGame: boolean }> = [];
+    const seen = new Set<string>();
+    for (const c of activeGameClaims) {
+      if (!c.promo_code || seen.has(c.promo_code)) continue;
+      seen.add(c.promo_code);
+      items.push({
+        code: c.promo_code,
+        label: `${c.promo_code} · ${lang === 'en' ? c.reward_label_en : c.reward_label_vi}`,
+        isGame: true,
+      });
+    }
+    for (const p of promoList) {
+      if (!p.code || seen.has(p.code)) continue;
+      seen.add(p.code);
+      items.push({
+        code: p.code,
+        label: `${p.code} · ${lang === 'en' ? p.title_en : p.title_vi}`,
+        isGame: false,
+      });
+    }
+    return items.slice(0, 4);
+  }, [activeGameClaims, promoList, lang]);
+
+  const handleApplyCartVoucher = (codeOverride?: string) => {
+    const nextCode = (codeOverride ?? voucherInput).trim().toUpperCase();
+    if (!nextCode) {
+      setPendingVoucherCode('');
+      setVoucherInput('');
+      return;
+    }
+    setVoucherInput(nextCode);
+    setPendingVoucherCode(nextCode);
+    showToast(t(`Đang kiểm tra ưu đãi ${nextCode}`, `Checking offer ${nextCode}`));
+  };
 
   return (
-    <div className="max-w-[1100px] mx-auto px-6 py-12 space-y-8">
-      <h1 className="text-3xl font-bold text-[#202020] dark:text-[#F1EFEA]">{t('Giỏ hàng của bạn', 'Shopping Cart')}</h1>
-      {cart.length === 0 ? (
-        <div className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-12 text-center space-y-4">
-          <p className="text-sm text-[#202020]/70 dark:text-[#F1EFEA]/70">{t('Giỏ hàng đang trống.', 'Your shopping cart is empty.')}</p>
-          <Link to={localePath('/shop')} className="inline-block px-5 py-2.5 bg-[#00552B] text-white text-sm rounded">
-            {t('Tiếp tục mua sắm', 'Browse Coffee')}
+    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-8">
+      {/* Header & Quick Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#00552B] dark:text-[#C6A667]">
+            {t('Giỏ hàng & Ưu đãi Đơn hàng', 'Your ROAR Bag & Order Perks')}
+          </p>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-3xl font-bold text-[#202020] dark:text-[#F1EFEA]">
+              {t('Giỏ hàng của bạn', 'Shopping Cart')}
+            </h1>
+            {cart.length > 0 && (
+              <span className="text-xs font-mono text-[#202020]/60 dark:text-[#F1EFEA]/60 tabular-nums">
+                {cart.length} {t('dòng sản phẩm', 'items')} · {totalUnitQty} {t('đơn vị/kg', 'units/kg')}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setCurrency(currency === 'VND' ? 'USD' : 'VND')}
+            className="px-3 py-1.5 rounded-lg border border-[#202020]/15 dark:border-white/15 bg-white dark:bg-[#16221C] text-xs font-mono font-semibold text-[#202020] dark:text-[#F1EFEA] cursor-pointer"
+          >
+            {currency}
+          </button>
+          <Link
+            to={localePath('/shop')}
+            className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline whitespace-nowrap"
+          >
+            ← {t('Tiếp tục chọn cà phê', 'Continue Shopping')}
           </Link>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-8 space-y-3">
-            {cart.map((item) => (
-              <div key={`${item.productId}-${item.variantLabel}`} className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-4 flex gap-4 items-center">
-                <div className="w-16 aspect-[4/5] rounded overflow-hidden shrink-0">
-                  <MediaImage imageKey={item.imageKey} alt={item.nameEn} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <Link to={localePath(`/product/${item.slug}`)} className="font-bold text-sm text-[#202020] dark:text-[#F1EFEA] hover:text-[#00552B] dark:hover:text-[#C6A667]">
-                    {lang === 'vi' ? item.nameVi : item.nameEn}
-                  </Link>
-                  <p className="text-xs text-[#202020]/60 dark:text-[#F1EFEA]/60">{item.sku} · {localizeVariantLabel(item.variantLabel, lang)}</p>
-                  {(item.unit === 'kg' || (item.pricingTiers?.length || 0) > 0) && (
-                    <p className="text-[11px] font-mono text-[#00552B] dark:text-[#C6A667] mt-0.5 tabular-nums">
-                      {formatPrice(item.unitPriceVnd, item.unitPriceUsd)}/kg × {item.quantity} kg
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center border border-[#202020]/15 dark:border-white/15 rounded">
-                  <button type="button" onClick={() => updateCartQty(item.productId, item.variantLabel, item.quantity - 1)} className="w-8 h-8 flex items-center justify-center cursor-pointer">
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  {item.unit === 'kg' || (item.pricingTiers?.length || 0) > 0 ? (
-                    <input
-                      type="number"
-                      min={1}
-                      max={100000}
-                      value={item.quantity}
-                      onChange={(e) => {
-                        const val = Math.floor(Number(e.target.value) || 0);
-                        if (val >= 1) updateCartQty(item.productId, item.variantLabel, val);
-                      }}
-                      className="w-14 text-center text-xs font-semibold bg-transparent focus:outline-none tabular-nums"
-                    />
-                  ) : (
-                    <span className="px-3 text-xs font-semibold tabular-nums">{item.quantity}</span>
-                  )}
-                  <button type="button" onClick={() => updateCartQty(item.productId, item.variantLabel, item.quantity + 1)} className="w-8 h-8 flex items-center justify-center cursor-pointer">
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="text-right min-w-[90px]">
-                  <span className="text-sm font-bold tabular-nums">{formatPrice(item.unitPriceVnd * item.quantity, item.unitPriceUsd * item.quantity)}</span>
-                </div>
-                <button type="button" onClick={() => removeFromCart(item.productId, item.variantLabel)} className="text-[#202020]/40 dark:text-[#F1EFEA]/40 hover:text-red-600 cursor-pointer">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+      </div>
+
+      {cart.length === 0 ? (
+        <div className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/10 dark:border-white/10 p-10 sm:p-14 text-center space-y-5">
+          <ShoppingBag className="w-12 h-12 mx-auto text-[#00552B]/40 dark:text-[#C6A667]/50" />
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <h2 className="text-xl font-bold text-[#202020] dark:text-[#F1EFEA]">
+              {t('Giỏ hàng đang chờ mẻ rang đầu tiên', 'Your cart is ready for fresh-roasted beans')}
+            </h2>
+            <p className="text-sm text-[#202020]/70 dark:text-[#F1EFEA]/70">
+              {t(
+                'Khám phá các dòng rang mộc 7 Cá Tính, hạt rang 5 bậc giá kg hoặc ghé Tạp chí để tìm đúng gu thưởng thức của bạn.',
+                'Explore 7-Personality single-origin roasts, 5-tier volume beans, or visit our Journal to discover your brew style.'
+              )}
+            </p>
           </div>
-          <div className="lg:col-span-4 bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-6 space-y-4">
-            <h2 className="text-lg font-bold">{t('Tóm tắt đơn hàng', 'Order Summary')}</h2>
-            <div className="flex justify-between text-sm">
-              <span className="text-[#202020]/70 dark:text-[#F1EFEA]/70">{t('Tạm tính', 'Subtotal')}</span>
-              <span className="font-bold tabular-nums">{formatPrice(cartSubtotalVnd)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-[#202020]/70 dark:text-[#F1EFEA]/70">{t('Phí vận chuyển ước tính', 'Est. Shipping')}</span>
-              <span className="font-medium tabular-nums">
-                {cartShipping.feeVnd === 0 ? t('Miễn phí', 'Free') : formatPrice(cartShipping.feeVnd)}
-              </span>
-            </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
-              to={localePath('/checkout')}
-              className="block text-center w-full py-3 bg-[#00552B] text-white text-sm font-semibold rounded hover:bg-[#003D25]"
+              to={localePath('/shop')}
+              className="px-5 py-2.5 bg-[#00552B] hover:bg-[#003D25] text-white text-sm font-semibold rounded-lg transition-colors"
             >
-              {t('Tiến hành Thanh toán', 'Proceed to Checkout')}
+              {t('Khám phá Cửa hàng', 'Explore Coffee Shop')}
+            </Link>
+            <Link
+              to={localePath('/journal')}
+              className="px-5 py-2.5 border border-[#00552B]/35 dark:border-[#C6A667]/40 text-[#00552B] dark:text-[#C6A667] text-sm font-semibold rounded-lg hover:bg-[#00552B]/5 transition-colors"
+            >
+              {t('Đọc Tạp Chí Cà Phê', 'Read Coffee Journal')}
             </Link>
           </div>
         </div>
+      ) : (
+        <>
+          {/* 2-Tier Free Shipping & Gift Progress Strip */}
+          <div className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#00552B]/20 dark:border-[#C6A667]/25 p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm font-medium text-[#003D25] dark:text-[#C6A667]">
+              <span className="inline-flex items-center gap-2">
+                {freeShipRemaining > 0 ? <Truck className="w-4 h-4 shrink-0" /> : <Gift className="w-4 h-4 shrink-0" />}
+                <span>
+                  {freeShipRemaining > 0
+                    ? t(
+                        `Thêm ${formatPrice(freeShipRemaining)} nữa để mở khóa Miễn phí vận chuyển toàn quốc (từ 500.000₫)`,
+                        `Add ${formatPrice(freeShipRemaining)} more to unlock Free Nationwide Shipping (500,000 VND tier)`
+                      )
+                    : giftTierRemaining > 0
+                    ? t(
+                        `Đã đạt Freeship! Thêm ${formatPrice(giftTierRemaining)} để mở khóa Quà dùng thử & X2 điểm thưởng (900.000₫)`,
+                        `Free Shipping unlocked! Add ${formatPrice(giftTierRemaining)} more for Bonus Gift & 2x Points (900,000 VND tier)`
+                      )
+                    : t(
+                        'Tuyệt vời! Đơn hàng đã mở khóa Freeship + Quà dùng thử & +40 điểm ROAR Play (+2 lượt game)!',
+                        'Unlocked Free Shipping + Sample Gift + 40 instant ROAR Play Points (+2 game plays)!'
+                      )}
+                </span>
+              </span>
+              <span className="font-mono text-xs font-bold tabular-nums shrink-0">{progressPct}%</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-[#202020]/10 dark:bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#00552B] to-[#C6A667] transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-[#202020]/60 dark:text-[#F1EFEA]/60 tabular-nums">
+              <span>0₫</span>
+              <span className={freeShipRemaining === 0 ? 'text-[#00552B] dark:text-[#C6A667] font-bold' : ''}>
+                500.000₫ · Freeship
+              </span>
+              <span className={giftTierRemaining === 0 ? 'text-[#00552B] dark:text-[#C6A667] font-bold' : ''}>
+                900.000₫ · {t('Quà + X2 Điểm', 'Gift + 2x Pts')}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left Column: Cart Items + Smart Bù Đơn Upsells */}
+            <div className="lg:col-span-8 space-y-6">
+              <div className="space-y-3">
+                {cart.map((item) => {
+                  const isBulkKg = item.unit === 'kg' || (item.pricingTiers?.length || 0) > 0;
+                  const isWished = wishlist.includes(item.slug);
+                  const sortedTiers = (item.pricingTiers || []).slice().sort((a, b) => a.minKg - b.minKg);
+                  const currentTier = isBulkKg ? resolveVolumeTier(sortedTiers, item.quantity) : null;
+                  const nextTier = isBulkKg ? sortedTiers.find((tr) => tr.minKg > item.quantity) || null : null;
+                  const addMoreForNext = nextTier ? Math.max(1, nextTier.minKg - item.quantity) : 0;
+
+                  return (
+                    <div
+                      key={`${item.productId}-${item.variantLabel}`}
+                      className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-4 sm:p-5 space-y-3"
+                    >
+                      <div className="flex gap-4 items-start sm:items-center">
+                        <Link
+                          to={localePath(`/product/${item.slug}`)}
+                          className="w-20 aspect-[4/5] rounded-lg overflow-hidden shrink-0 bg-[#F8F5EF] dark:bg-[#0E1512]"
+                        >
+                          <MediaImage
+                            imageKey={item.imageKey}
+                            alt={lang === 'vi' ? item.nameVi : item.nameEn}
+                            className="w-full h-full object-cover"
+                          />
+                        </Link>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <Link
+                              to={localePath(`/product/${item.slug}`)}
+                              className="font-bold text-sm sm:text-base text-[#202020] dark:text-[#F1EFEA] hover:text-[#00552B] dark:hover:text-[#C6A667] leading-snug"
+                            >
+                              {lang === 'vi' ? item.nameVi : item.nameEn}
+                            </Link>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleWishlist(item.slug)}
+                                title={t('Lưu vào yêu thích', 'Save to wishlist')}
+                                className="p-1.5 rounded text-[#202020]/45 dark:text-[#F1EFEA]/45 hover:text-[#00552B] dark:hover:text-[#C6A667] cursor-pointer"
+                              >
+                                <Heart className={`w-4 h-4 ${isWished ? 'fill-[#00552B] dark:fill-[#C6A667] text-[#00552B] dark:text-[#C6A667]' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeFromCart(item.productId, item.variantLabel)}
+                                aria-label={t('Xóa sản phẩm', 'Remove item')}
+                                className="p-1.5 rounded text-[#202020]/40 dark:text-[#F1EFEA]/40 hover:text-red-600 cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-[#202020]/60 dark:text-[#F1EFEA]/60">
+                            {item.sku} · {localizeVariantLabel(item.variantLabel, lang)}
+                          </p>
+
+                          {isBulkKg && (
+                            <p className="text-[11px] font-mono text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                              {formatPrice(item.unitPriceVnd, item.unitPriceUsd)}/kg × {item.quantity} kg
+                              {currentTier ? ` · ${lang === 'vi' ? currentTier.labelVi : currentTier.labelEn}` : ''}
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <div className="inline-flex items-center border border-[#202020]/15 dark:border-white/15 rounded-lg bg-[#F8F5EF]/50 dark:bg-[#0E1512]">
+                              <button
+                                type="button"
+                                onClick={() => updateCartQty(item.productId, item.variantLabel, item.quantity - 1)}
+                                className="w-8 h-8 flex items-center justify-center hover:bg-[#202020]/5 dark:hover:bg-white/10 cursor-pointer"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              {isBulkKg ? (
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100000}
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const val = Math.floor(Number(e.target.value) || 0);
+                                    if (val >= 1) updateCartQty(item.productId, item.variantLabel, val);
+                                  }}
+                                  className="w-14 text-center text-xs font-semibold bg-transparent focus:outline-none tabular-nums"
+                                />
+                              ) : (
+                                <span className="px-3.5 text-xs font-semibold tabular-nums">{item.quantity}</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => updateCartQty(item.productId, item.variantLabel, item.quantity + 1)}
+                                className="w-8 h-8 flex items-center justify-center hover:bg-[#202020]/5 dark:hover:bg-white/10 cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-sm sm:text-base font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                                {formatPrice(item.unitPriceVnd * item.quantity, item.unitPriceUsd * item.quantity)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Smart Volume Tier Upgrade Nudge for Roasted Beans */}
+                      {nextTier && addMoreForNext > 0 && addMoreForNext <= 15 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[#202020]/8 dark:border-white/10 text-xs">
+                          <span className="text-[#202020]/75 dark:text-[#F1EFEA]/75">
+                            {t(
+                              `Thêm ${addMoreForNext} kg để đạt mốc ${nextTier.labelVi}: giá giảm còn ${formatPrice(nextTier.priceVnd, nextTier.priceUsd)}/kg`,
+                              `Add ${addMoreForNext} kg to unlock ${nextTier.labelEn} tier at ${formatPrice(nextTier.priceVnd, nextTier.priceUsd)}/kg`
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateCartQty(item.productId, item.variantLabel, nextTier.minKg)}
+                            className="px-2.5 py-1 rounded bg-[#00552B]/10 dark:bg-[#C6A667]/15 text-[#00552B] dark:text-[#C6A667] font-semibold hover:bg-[#00552B] hover:text-white dark:hover:bg-[#C6A667] dark:hover:text-[#111111] transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            {t(`Nâng lên ${nextTier.minKg} kg`, `Upgrade to ${nextTier.minKg} kg`)}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Smart Bù Đơn Đủ Freeship / Mua Kèm Upsell Grid */}
+              {upsellPicks.length > 0 && (
+                <section className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/10 dark:border-white/10 p-5 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm sm:text-base font-bold text-[#202020] dark:text-[#F1EFEA]">
+                        {freeShipRemaining > 0
+                          ? t('Gợi ý bù đơn đủ Freeship 500k', 'Smart Add-Ons to Reach 500k Free Shipping')
+                          : t('Thường được mua kèm cùng mẻ rang mới', 'Popular Pairings With Fresh Roasts')}
+                      </h2>
+                      <p className="text-xs text-[#202020]/60 dark:text-[#F1EFEA]/60">
+                        {t(
+                          'Thêm nhanh 1 chạm từ danh mục đang có sẵn trong kho ROAR.',
+                          'One-click add-ons curated from live in-stock ROAR selections.'
+                        )}
+                      </p>
+                    </div>
+                    <Link
+                      to={localePath('/shop')}
+                      className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline whitespace-nowrap"
+                    >
+                      {t('Xem tất cả →', 'View All →')}
+                    </Link>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {upsellPicks.map((p) => {
+                      const v = p.variants?.[0];
+                      const unitVnd = v?.priceVnd || p.price_vnd;
+                      const unitUsd = v?.priceUsd || p.price_usd;
+                      const variantLabel = v?.label || p.packaging_options?.[0] || 'Standard';
+                      const isKgUnit = p.category === 'roasted_beans';
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F5EF]/70 dark:bg-[#0E1512] border border-[#202020]/8 dark:border-white/10"
+                        >
+                          <Link
+                            to={localePath(`/product/${p.slug}`)}
+                            className="w-12 aspect-[4/5] rounded overflow-hidden shrink-0 bg-white dark:bg-[#16221C]"
+                          >
+                            <MediaImage
+                              imageKey={p.image_key}
+                              alt={lang === 'vi' ? p.name_vi : p.name_en}
+                              className="w-full h-full object-cover"
+                            />
+                          </Link>
+                          <div className="flex-1 min-w-0">
+                            <Link
+                              to={localePath(`/product/${p.slug}`)}
+                              className="text-xs font-bold text-[#202020] dark:text-[#F1EFEA] hover:text-[#00552B] dark:hover:text-[#C6A667] line-clamp-1"
+                            >
+                              {lang === 'vi' ? p.name_vi : p.name_en}
+                            </Link>
+                            <p className="text-[11px] font-mono text-[#00552B] dark:text-[#C6A667] tabular-nums mt-0.5">
+                              {formatPrice(unitVnd, unitUsd)}
+                              {isKgUnit ? '/kg' : ''}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              addToCart({
+                                productId: p.id,
+                                slug: p.slug,
+                                sku: p.sku,
+                                nameVi: p.name_vi,
+                                nameEn: p.name_en,
+                                variantLabel,
+                                unitPriceVnd: unitVnd,
+                                unitPriceUsd: unitUsd,
+                                quantity: 1,
+                                imageKey: p.image_key,
+                                unit: isKgUnit ? 'kg' : 'unit',
+                                pricingTiers: isKgUnit ? p.pricing_tiers : undefined,
+                              });
+                              showToast(t('Đã thêm vào giỏ hàng', 'Added to cart'));
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white text-[11px] font-semibold shrink-0 whitespace-nowrap cursor-pointer"
+                          >
+                            {t('+ Thêm', '+ Add')}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            {/* Right Column: Order Summary + Voucher Selector + Points Preview */}
+            <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-24">
+              <div className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/10 dark:border-white/10 p-6 space-y-5">
+                <h2 className="text-lg font-bold text-[#202020] dark:text-[#F1EFEA]">
+                  {t('Tóm tắt đơn hàng', 'Order Summary')}
+                </h2>
+
+                {/* Voucher & Game Reward Input */}
+                <div className="space-y-2.5 pt-1 border-t border-[#202020]/8 dark:border-white/10">
+                  <label className="text-xs font-semibold text-[#202020]/75 dark:text-[#F1EFEA]/75 flex items-center gap-1.5 pt-2">
+                    <Tag className="w-3.5 h-3.5 text-[#00552B] dark:text-[#C6A667]" />
+                    {t('Mã giảm giá & Quà Mini-Game', 'Voucher & Mini-Game Rewards')}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={voucherInput}
+                      onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
+                      placeholder={t('Nhập mã (vd: ROARCOMBO12)', 'Enter code (e.g. ROARCOMBO12)')}
+                      className="flex-1 min-w-0 bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#202020]/15 dark:border-white/15 rounded-lg px-3 py-2 text-xs font-mono uppercase text-[#202020] dark:text-[#F1EFEA]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCartVoucher()}
+                      className="px-3.5 py-2 rounded-lg border border-[#00552B] dark:border-[#C6A667] text-[#00552B] dark:text-[#C6A667] text-xs font-semibold hover:bg-[#00552B]/8 cursor-pointer whitespace-nowrap"
+                    >
+                      {t('Áp dụng', 'Apply')}
+                    </button>
+                  </div>
+
+                  {previewVoucherMsg && (
+                    <p
+                      className={`text-xs font-medium ${
+                        previewDiscountVnd > 0 || previewVoucherType === 'free_shipping' || previewVoucherType === 'product_gift'
+                          ? 'text-[#00552B] dark:text-[#C6A667]'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
+                    >
+                      {previewVoucherMsg}
+                    </p>
+                  )}
+
+                  {quickVoucherChips.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-[11px] text-[#202020]/55 dark:text-[#F1EFEA]/55">
+                        {t('Chọn nhanh ưu đãi hiện có:', 'Quick-apply available offers:')}
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {quickVoucherChips.map((chip) => {
+                          const isSelected = pendingVoucherCode === chip.code;
+                          return (
+                            <button
+                              key={chip.code}
+                              type="button"
+                              onClick={() => handleApplyCartVoucher(isSelected ? '' : chip.code)}
+                              className={`text-left px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'border-[#00552B] dark:border-[#C6A667] bg-[#00552B]/10 dark:bg-[#C6A667]/15 text-[#003D25] dark:text-[#C6A667] font-semibold'
+                                  : 'border-[#202020]/10 dark:border-white/10 hover:border-[#00552B]/40 text-[#202020]/80 dark:text-[#F1EFEA]/80'
+                              }`}
+                            >
+                              <span className="truncate flex items-center gap-1.5">
+                                {chip.isGame && <Gamepad2 className="w-3 h-3 shrink-0 text-[#C6A667]" />}
+                                <span className="truncate">{chip.label}</span>
+                              </span>
+                              <span className="shrink-0 font-mono text-[10px]">
+                                {isSelected ? '✓' : t('Dùng', 'Use')}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Price Breakdown */}
+                <div className="space-y-2.5 pt-3 border-t border-[#202020]/10 dark:border-white/10 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-[#202020]/70 dark:text-[#F1EFEA]/70">{t('Tạm tính', 'Subtotal')}</span>
+                    <span className="font-semibold tabular-nums">{formatPrice(cartSubtotalVnd)}</span>
+                  </div>
+                  {effectiveDiscount > 0 && (
+                    <div className="flex justify-between text-[#00552B] dark:text-[#C6A667]">
+                      <span>{t('Giảm giá voucher', 'Voucher Savings')}</span>
+                      <span className="font-semibold tabular-nums">-{formatPrice(effectiveDiscount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-[#202020]/70 dark:text-[#F1EFEA]/70">{t('Phí vận chuyển ước tính', 'Est. Shipping')}</span>
+                    <span className="font-medium tabular-nums">
+                      {effectiveShippingFee === 0 ? (
+                        <span className="text-[#00552B] dark:text-[#C6A667] font-semibold">{t('Miễn phí', 'Free')}</span>
+                      ) : (
+                        formatPrice(effectiveShippingFee)
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline pt-2.5 border-t border-[#202020]/10 dark:border-white/10">
+                    <span className="font-bold text-[#202020] dark:text-[#F1EFEA]">{t('Tổng dự kiến', 'Estimated Total')}</span>
+                    <span className="text-xl font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                      {formatPrice(estimatedGrandTotal)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Loyalty & Game Points Preview */}
+                <div className="rounded-xl bg-[#00552B]/6 dark:bg-[#00552B]/25 border border-[#00552B]/15 dark:border-[#C6A667]/25 p-3 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-[#003D25] dark:text-[#C6A667] font-semibold">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {t('Đặc quyền đơn hàng', 'Order Perks')}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      +{estEarnPoints} {t('điểm Club', 'Club pts')}
+                    </span>
+                  </div>
+                  {cartSubtotalVnd >= 100000 && (
+                    <p className="text-[11px] text-[#202020]/75 dark:text-[#F1EFEA]/75 flex items-center gap-1.5">
+                      <Gamepad2 className="w-3.5 h-3.5 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                      <span>
+                        {t(
+                          'Tặng ngay +40 điểm ROAR Play (+2 lượt săn quà) khi hoàn tất đơn.',
+                          'Includes +40 instant ROAR Play Points (+2 mini-game plays) after checkout.'
+                        )}
+                      </span>
+                    </p>
+                  )}
+                  {!user && (
+                    <p className="text-[11px] text-[#202020]/65 dark:text-[#F1EFEA]/65">
+                      {t('Tạo đơn sẽ tự kích hoạt thẻ Thành viên ROAR CLUB miễn phí.', 'Checkout automatically activates your free ROAR CLUB membership.')}
+                    </p>
+                  )}
+                </div>
+
+                <Link
+                  to={localePath('/checkout')}
+                  className="block text-center w-full py-3.5 bg-[#00552B] hover:bg-[#003D25] text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  {t('Tiến hành Thanh toán →', 'Proceed to Checkout →')}
+                </Link>
+
+                <div className="flex items-center justify-center gap-2 text-[11px] text-[#202020]/60 dark:text-[#F1EFEA]/60 pt-1">
+                  <ShieldCheck className="w-4 h-4 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                  <span>{t('100% Rang mộc · Đóng túi van 1 chiều · Hỗ trợ đổi trả', '100% Pure Roast · One-Way Valve Bag · Easy Support')}</span>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </>
       )}
+
+      <RecentlyViewedStrip />
     </div>
   );
 };
 
 export const CheckoutPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
-  const { cart, cartSubtotalVnd, formatPrice, currency, user, clearCart, refreshUser, setAuthSession, showToast, apiFetch, settings } = useStore();
+  const {
+    cart,
+    cartSubtotalVnd,
+    formatPrice,
+    currency,
+    user,
+    clearCart,
+    refreshUser,
+    refreshGameClaims,
+    setAuthSession,
+    showToast,
+    apiFetch,
+    settings,
+    pendingVoucherCode,
+    setPendingVoucherCode,
+  } = useStore();
 
   const defaultAddr = user?.addresses?.find((a: any) => a.isDefault) || user?.addresses?.[0];
   const [customerName, setCustomerName] = useState(defaultAddr?.recipient || user?.fullName || '');
@@ -546,10 +1112,22 @@ export const CheckoutPage: React.FC = () => {
   const [availablePromos, setAvailablePromos] = useState<any[]>([]);
   const [myGameClaims, setMyGameClaims] = useState<any[]>([]);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [pointsTouched, setPointsTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<any>(null);
   const [confirmedItems, setConfirmedItems] = useState<any[]>([]);
   const [confirmedMembership, setConfirmedMembership] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const savedNote = window.sessionStorage.getItem('roar_gift_card_note');
+      if (savedNote) {
+        setNotes((prev) => (prev.trim() ? prev : `[Thiệp Quà ROAR]: ${savedNote}`));
+      }
+    } catch {
+      // ignore storage access issues
+    }
+  }, []);
 
   useEffect(() => {
     fetchPromotionsWithFallback()
@@ -582,6 +1160,18 @@ export const CheckoutPage: React.FC = () => {
 
   const availablePoints = user?.points?.available || 0;
   const maxRedeemPoints = Math.min(availablePoints, Math.floor((cartSubtotalVnd * 0.3) / 100));
+
+  useEffect(() => {
+    if (pointsTouched || maxRedeemPoints <= 0) return;
+    try {
+      if (window.sessionStorage.getItem('roar_use_points_discount') === '1') {
+        setPointsToRedeem(maxRedeemPoints);
+      }
+    } catch {
+      // ignore
+    }
+  }, [maxRedeemPoints, pointsTouched]);
+
   const pointsDiscount = pointsToRedeem * 100;
   const shippingCalc = calculateShippingFee(cartSubtotalVnd, settings);
   const shippingFee = appliedVoucherType === 'free_shipping' ? 0 : shippingCalc.feeVnd;
@@ -626,7 +1216,7 @@ export const CheckoutPage: React.FC = () => {
   useEffect(() => {
     if (cartSubtotalVnd <= 0) return;
     try {
-      const pending = window.sessionStorage.getItem('roar_pending_promo');
+      const pending = pendingVoucherCode || window.sessionStorage.getItem('roar_pending_promo');
       if (pending) {
         window.sessionStorage.removeItem('roar_pending_promo');
         applyVoucher(pending);
@@ -634,7 +1224,7 @@ export const CheckoutPage: React.FC = () => {
     } catch {
       // ignore storage access issues
     }
-  }, [cartSubtotalVnd, applyVoucher]);
+  }, [cartSubtotalVnd, applyVoucher, pendingVoucherCode]);
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -683,11 +1273,19 @@ export const CheckoutPage: React.FC = () => {
         setConfirmedItems(snapshotItems);
         setConfirmedOrder(d.order);
         setConfirmedMembership(d.membership || null);
+        setPendingVoucherCode('');
         clearCart();
+        try {
+          window.sessionStorage.removeItem('roar_gift_card_note');
+          window.sessionStorage.removeItem('roar_use_points_discount');
+        } catch {
+          // ignore
+        }
         if (!user && d.auth?.token && d.auth?.user) {
           setAuthSession(d.auth.user, d.auth.token);
         } else {
           refreshUser();
+          refreshGameClaims();
         }
         showToast(
           d.membership?.isNewMember
@@ -731,6 +1329,33 @@ export const CheckoutPage: React.FC = () => {
                   +{confirmedMembership.welcomePoints} pts
                 </span>
               )}
+            </div>
+          )}
+          {Number(confirmedOrder.orderBonusPoints || 0) > 0 && (
+            <div className="rounded-lg bg-[#003D25] text-[#F8F5EF] border border-[#C6A667]/40 px-4 py-3 text-xs text-left flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Gamepad2 className="w-5 h-5 text-[#C6A667] shrink-0" />
+                <div>
+                  <p className="font-bold text-[#C6A667]">
+                    {t(
+                      `Tặng ngay +${confirmedOrder.orderBonusPoints} điểm ROAR Play (+2 lượt chơi 16 Mini-Game)!`,
+                      `Unlocked +${confirmedOrder.orderBonusPoints} Instant ROAR Play Points (+2 Mini-Game Plays)!`
+                    )}
+                  </p>
+                  <p className="text-[11px] text-[#F8F5EF]/75 mt-0.5">
+                    {t(
+                      'Điểm đã cộng sẵn sàng — vào sảnh game thử vận may & săn thêm quà ngay.',
+                      'Credited immediately — jump into ROAR Play for extra chances to win gifts.'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to={localePath('/play')}
+                className="px-3.5 py-1.5 rounded bg-[#C6A667] hover:bg-[#d8b878] text-[#111111] font-bold whitespace-nowrap shrink-0"
+              >
+                {t('Chơi ngay →', 'Play Now →')}
+              </Link>
             </div>
           )}
           <div className="bg-[#F8F5EF] dark:bg-[#0E1512] p-4 rounded-lg text-sm space-y-1 text-left">
@@ -1313,19 +1938,54 @@ export const CheckoutPage: React.FC = () => {
           </div>
 
           {user && maxRedeemPoints > 0 && (
-            <div className="p-3 bg-[#F8F5EF] dark:bg-[#0E1512] rounded-lg space-y-1.5 text-xs">
-              <div className="flex justify-between">
+            <div className="p-3 bg-[#F8F5EF] dark:bg-[#0E1512] rounded-lg space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
                 <span>{t(`Đổi điểm thưởng (Có ${availablePoints} điểm)`, `Redeem ROAR Points (${availablePoints} avail.)`)}</span>
-                <span className="font-mono font-semibold">-{formatPrice(pointsDiscount)}</span>
+                <span className="font-mono font-semibold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                  -{formatPrice(pointsDiscount)}
+                </span>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={maxRedeemPoints}
-                value={pointsToRedeem}
-                onChange={(e) => setPointsToRedeem(Number(e.target.value))}
-                className="w-full accent-[#00552B]"
-              />
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="range"
+                  min={0}
+                  max={maxRedeemPoints}
+                  value={pointsToRedeem}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setPointsTouched(true);
+                    setPointsToRedeem(val);
+                    try {
+                      window.sessionStorage.setItem('roar_use_points_discount', val > 0 ? '1' : '0');
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="flex-1 accent-[#00552B]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPointsTouched(true);
+                    const nextVal = pointsToRedeem === maxRedeemPoints ? 0 : maxRedeemPoints;
+                    setPointsToRedeem(nextVal);
+                    try {
+                      window.sessionStorage.setItem('roar_use_points_discount', nextVal > 0 ? '1' : '0');
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded text-[11px] font-semibold shrink-0 cursor-pointer transition-colors ${
+                    pointsToRedeem === maxRedeemPoints
+                      ? 'bg-[#00552B] text-white'
+                      : 'border border-[#00552B] text-[#00552B] dark:border-[#C6A667] dark:text-[#C6A667]'
+                  }`}
+                >
+                  {pointsToRedeem === maxRedeemPoints
+                    ? t('Bỏ dùng', 'Clear')
+                    : t(`Dùng tối đa (${maxRedeemPoints})`, `Max (${maxRedeemPoints})`)}
+                </button>
+              </div>
             </div>
           )}
 

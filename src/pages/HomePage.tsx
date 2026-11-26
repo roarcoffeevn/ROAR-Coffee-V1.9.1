@@ -41,7 +41,9 @@ import {
   type GameKey,
 } from '../lib/gamesCatalog';
 import { AdaptiveLogo } from '../components/AdaptiveLogo';
+import { FlashComboSection } from '../components/FlashComboSection';
 import { MediaImage } from '../components/MediaImage';
+import { TasteFinderSection } from '../components/TasteFinderSection';
 import { VietnamOriginMap } from '../components/VietnamOriginMap';
 import { useI18n } from '../i18n/I18nContext';
 import { type Product, useStore } from '../context/StoreContext';
@@ -373,6 +375,7 @@ export const HomePage: React.FC = () => {
     [settings.cms_hero_metrics_json]
   );
 
+  const [allCatalogProducts, setAllCatalogProducts] = useState<Product[]>([]);
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [giftVouchers, setGiftVouchers] = useState<Product[]>([]);
   const [giftOpen, setGiftOpen] = useState(false);
@@ -395,6 +398,7 @@ export const HomePage: React.FC = () => {
   useEffect(() => {
     fetchProductsWithFallback()
       .then((list) => {
+        setAllCatalogProducts(list || []);
         setFeaturedProducts(list.filter((p: Product) => p.category !== 'green_bean' && p.sub_category !== 'Gift Voucher').slice(0, 4));
         setGiftVouchers(list.filter((p: Product) => p.sub_category === 'Gift Voucher').sort((a: Product, b: Product) => a.price_vnd - b.price_vnd));
       })
@@ -1119,6 +1123,10 @@ export const HomePage: React.FC = () => {
           ))}
         </div>
       </section>
+
+      {/* 2C. 15-SECOND COFFEE TASTE FINDER & DAILY ROAST COMBOS */}
+      <TasteFinderSection products={allCatalogProducts} />
+      <FlashComboSection products={allCatalogProducts} />
 
       {/* 3. FEATURED COFFEE COLLECTIONS */}
       <section className="max-w-[1280px] mx-auto px-6 py-16 space-y-8">

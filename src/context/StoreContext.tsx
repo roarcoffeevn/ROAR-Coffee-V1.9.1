@@ -189,6 +189,21 @@ export interface VietcombankRateInfo {
   isLive: boolean;
 }
 
+export interface GameRewardClaimSummary {
+  id: number;
+  game_key: string;
+  claim_code: string;
+  reward_type: 'points' | 'voucher_percent' | 'voucher_fixed' | 'free_shipping' | 'product_gift';
+  reward_label_vi: string;
+  reward_label_en: string;
+  reward_value: number;
+  promo_code: string;
+  gift_product_name_vi?: string;
+  gift_product_name_en?: string;
+  status: string;
+  expires_at?: string;
+}
+
 interface StoreContextValue {
   user: AuthUser | null;
   authToken: string | null;
@@ -231,6 +246,10 @@ interface StoreContextValue {
   toggleTheme: () => void;
   customBreadcrumb: BreadcrumbNode[] | null;
   setCustomBreadcrumb: (nodes: BreadcrumbNode[] | null) => void;
+  activeGameClaims: GameRewardClaimSummary[];
+  refreshGameClaims: () => Promise<void>;
+  pendingVoucherCode: string;
+  setPendingVoucherCode: (code: string) => void;
 }
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -304,6 +323,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [vcbRateInfo, setVcbRateInfo] = useState<VietcombankRateInfo | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [customBreadcrumb, setCustomBreadcrumb] = useState<BreadcrumbNode[] | null>(null);
+  const [activeGameClaims, setActiveGameClaims] = useState<GameRewardClaimSummary[]>([]);
+  const [pendingVoucherCode, setPendingVoucherCodeState] = useState<string>(() => {
+    try {
+      return typeof window !== 'undefined' && window.sessionStorage
+        ? window.sessionStorage.getItem('roar_pending_voucher') || ''
+        : '';
+    } catch {
+      return '';
+    }
+  });
+
+  const setPendingVoucherCode = useCallback((code: string) => {
+    const clean = String(code || '').trim().toUpperCase();
+    setPendingVoucherCodeState(clean);
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        if (clean) window.sessionStorage.setItem('roar_pending_voucher', clean);
+        else window.sessionStorage.removeItem('roar_pending_voucher');
+      }
+    } catch {
+      // silent
+    }
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -443,11 +485,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
+  const refreshGameClaims = useCallback(async () => {
+    const token = authToken || safeGetStorage('roar_auth_token');
+    if (!token && !user) {
+      setActiveGameClaims([]);
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/games');
+      if (!res.ok) return;
+      const d = await res.json().catch(() => null);
+      const claims = Array.isArray(d?.myClaims)
+        ? d.myClaims.filter(
+            (c: any) =>
+              c.status === 'active' &&
+              (c.reward_type === 'voucher_percent' ||
+                c.reward_type === 'voucher_fixed' ||
+                c.reward_type === 'free_shipping' ||
+                c.reward_type === 'product_gift')
+          )
+        : [];
+      setActiveGameClaims(claims);
+    } catch {
+      // silent
+    }
+  }, [authToken, user, apiFetch]);
+
   useEffect(() => {
     refreshUser();
     refreshBootstrap();
     refreshVcbRate(false);
   }, [refreshUser, refreshBootstrap, refreshVcbRate]);
+
+  useEffect(() => {
+    if (user) {
+      refreshGameClaims();
+    } else {
+      setActiveGameClaims([]);
+    }
+  }, [user, refreshGameClaims]);
 
   useEffect(() => {
     safeSetStorage('roar_cart', JSON.stringify(cart));
@@ -642,6 +718,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         toggleTheme,
         customBreadcrumb,
         setCustomBreadcrumb,
+        activeGameClaims,
+        refreshGameClaims,
+        pendingVoucherCode,
+        setPendingVoucherCode,
       }}
     >
       {children}

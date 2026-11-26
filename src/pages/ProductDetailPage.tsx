@@ -1,17 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Expand, Gift, Heart, HelpCircle, Link2, Share2, ShieldAlert, Star, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Expand, Gamepad2, Gift, Heart, HelpCircle, Link2, Share2, ShieldAlert, ShoppingBag, Star, Tag, X } from 'lucide-react';
 import { B2BInquiryModal } from '../components/B2BInquiryModal';
+import { CafeMarginCalculator } from '../components/CafeMarginCalculator';
 import { GiftVoucherModal } from '../components/GiftVoucherModal';
 import { RecentlyViewedStrip, recordRecentlyViewed } from '../components/RecentlyViewedStrip';
 import { MediaImage } from '../components/MediaImage';
 import { useI18n } from '../i18n/I18nContext';
 import { type Product, useStore } from '../context/StoreContext';
 import { getProductGallery } from '../lib/media';
-import { localizeBrewingMethod, localizeCoffeeType, localizeVariantLabel } from '../lib/i18nHelpers';
+import { localizeBrewingMethod, localizeCoffeeType, localizeJournalCategory, localizeVariantLabel } from '../lib/i18nHelpers';
 import { resolveVolumeTier } from '../lib/pricing';
 import { updateCustomSeoHead, upsertJsonLd } from '../lib/routeSeo';
-import { fetchProductBySlugWithFallback, fetchProductsWithFallback } from '../lib/staticFallback';
+import { fetchJournalWithFallback, fetchProductBySlugWithFallback, fetchProductsWithFallback } from '../lib/staticFallback';
+import { getArticlesForProduct } from '../lib/journalEcosystem';
 import {
   buildCanonicalShareUrl,
   buildFacebookShareHref,
@@ -34,6 +36,10 @@ export const ProductDetailPage: React.FC = () => {
     apiFetch,
     showToast,
     setCustomBreadcrumb,
+    activeGameClaims,
+    pendingVoucherCode,
+    setPendingVoucherCode,
+    cartOpen,
   } = useStore();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -54,6 +60,19 @@ export const ProductDetailPage: React.FC = () => {
   const [voucherCatalog, setVoucherCatalog] = useState<Product[]>([]);
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showStickyBuy, setShowStickyBuy] = useState(false);
+  const [journalArticles, setJournalArticles] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchJournalWithFallback()
+      .then((list) => setJournalArticles(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  }, []);
+
+  const matchedJournalArticles = useMemo(
+    () => (product ? getArticlesForProduct(product, journalArticles) : []),
+    [product, journalArticles]
+  );
 
   const fetchProduct = () => {
     if (!slug) return;
@@ -76,6 +95,13 @@ export const ProductDetailPage: React.FC = () => {
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    const onScroll = () => setShowStickyBuy(window.scrollY > 460);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     fetchProduct();
@@ -506,6 +532,33 @@ export const ProductDetailPage: React.FC = () => {
                   {t('Mức áp dụng:', 'Active Tier:')} {lang === 'vi' ? activeTier.labelVi : activeTier.labelEn}
                 </span>
               )}
+              {!isGreen && !isGiftVoucher && product.category !== 'pepper' && (() => {
+                let estCups = 0;
+                if (hasVolumeTiers) {
+                  estCups = 50; // 1kg / 20g
+                } else if (product.category === 'instant') {
+                  const m = activeVariant.label.match(/(\d+)\s*(gói|stick|sachet|hộp|túi|x)/i);
+                  estCups = m ? Math.max(1, Number(m[1])) : 10;
+                } else {
+                  const kgMatch = activeVariant.label.match(/(\d+(?:\.\d+)?)\s*kg/i);
+                  const gMatch = activeVariant.label.match(/(\d+(?:\.\d+)?)\s*g/i);
+                  const grams = kgMatch ? Number(kgMatch[1]) * 1000 : gMatch ? Number(gMatch[1]) : 250;
+                  estCups = Math.max(1, Math.round(grams / 20));
+                }
+                const perCupVnd = Math.round(effectiveUnitVnd / estCups);
+                const perCupUsd = Number((effectiveUnitUsd / estCups).toFixed(2));
+                return (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-[#00552B] dark:text-[#C6A667] font-medium mt-1 tabular-nums">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {t(
+                        `Chi phí thực tế: ~${estCups} ly chuẩn · ${formatPrice(perCupVnd, perCupUsd)}/ly`,
+                        `Est. Yield: ~${estCups} cups · ${formatPrice(perCupVnd, perCupUsd)}/cup`
+                      )}
+                    </span>
+                  </span>
+                );
+              })()}
             </div>
             <span className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65 tabular-nums">
               {product.inventory > 0
@@ -784,6 +837,56 @@ export const ProductDetailPage: React.FC = () => {
                   {t('Yêu cầu giá sỉ / HORECA', 'Wholesale Inquiry')}
                 </button>
               </div>
+
+              {/* Game-to-Order Voucher & Bonus Play Perk */}
+              {(() => {
+                const claim = activeGameClaims.find((c) => c.promo_code);
+                return (
+                  <div className="rounded-xl bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#00552B]/15 dark:border-[#C6A667]/25 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    {claim ? (
+                      <>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Tag className="w-3.5 h-3.5 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                          <span className="truncate text-[#202020] dark:text-[#F1EFEA]">
+                            {t('Có sẵn mã Game:', 'Game Voucher:')}{' '}
+                            <strong className="font-mono text-[#00552B] dark:text-[#C6A667]">{claim.promo_code}</strong>{' '}
+                            <span className="opacity-70">({lang === 'en' ? claim.reward_label_en : claim.reward_label_vi})</span>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingVoucherCode(claim.promo_code);
+                            showToast(t(`Đã gắn mã ${claim.promo_code} vào giỏ hàng`, `Queued ${claim.promo_code} for cart`));
+                          }}
+                          className={`px-2.5 py-1 rounded font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
+                            pendingVoucherCode === claim.promo_code
+                              ? 'bg-[#00552B] text-white'
+                              : 'bg-[#00552B]/12 dark:bg-[#C6A667]/20 text-[#00552B] dark:text-[#C6A667]'
+                          }`}
+                        >
+                          {pendingVoucherCode === claim.promo_code ? t('Đã gắn mã', 'Applied') : t('Dùng mã này', 'Use Code')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 text-[#202020]/75 dark:text-[#F1EFEA]/75 min-w-0 truncate">
+                          <Gamepad2 className="w-3.5 h-3.5 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                          <span className="truncate">
+                            {t('Đặt đơn từ 100k nhận +40 điểm ROAR (+2 lượt chơi Mini-Game)', 'Orders 100k+ earn +40 Play Points (+2 Mini-Game plays)')}
+                          </span>
+                        </span>
+                        <Link
+                          to={localePath('/play')}
+                          className="font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline whitespace-nowrap shrink-0"
+                        >
+                          {t('Săn mã →', 'Win Code →')}
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -909,9 +1012,20 @@ export const ProductDetailPage: React.FC = () => {
               <span className="text-[#202020]/60 dark:text-[#F1EFEA]/60">{t('Ghi chú thử nếm', 'Tasting Notes')}</span>
               <span className="font-medium text-right">{lang === 'vi' ? product.tasting_notes_vi : product.tasting_notes_en}</span>
             </div>
-            <div className="flex justify-between gap-4">
+            <div className="flex justify-between gap-4 items-center">
               <span className="text-[#202020]/60 dark:text-[#F1EFEA]/60">{t('Phương pháp pha gợi ý', 'Recommended Brewing')}</span>
-              <span className="font-medium text-right">{product.brewing_methods.map((m) => localizeBrewingMethod(m, lang)).join(' · ')}</span>
+              <span className="font-medium text-right flex flex-wrap items-center justify-end gap-2">
+                <span>{product.brewing_methods.map((m) => localizeBrewingMethod(m, lang)).join(' · ')}</span>
+                {!isGreen && !isGiftVoucher && product.category !== 'pepper' && (
+                  <Link
+                    to={localePath('/brewing-handbook')}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline"
+                  >
+                    <Clock className="w-3 h-3" />
+                    <span>{t('Mở đồng hồ pha', 'Brew Timer →')}</span>
+                  </Link>
+                )}
+              </span>
             </div>
             {(isGreen || hasVolumeTiers) && (
               <>
@@ -950,6 +1064,10 @@ export const ProductDetailPage: React.FC = () => {
       </div>
         );
       })()}
+
+      {(product.category === 'roasted_beans' || product.slug.includes('espresso') || hasVolumeTiers) && (
+        <CafeMarginCalculator product={product} />
+      )}
 
       {/* Customer Reviews */}
       <section className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-6 sm:p-8 space-y-6">
@@ -1150,6 +1268,58 @@ export const ProductDetailPage: React.FC = () => {
         );
       })()}
 
+      {/* Deepen Your Knowledge — Bidirectional Journal Discovery */}
+      {matchedJournalArticles.length > 0 && (
+        <section className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#00552B] dark:text-[#C6A667] font-semibold flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5" />
+                ROAR COFFEE JOURNAL
+              </p>
+              <h2 className="text-2xl font-bold text-[#202020] dark:text-[#F1EFEA] mt-1">
+                {t('Tìm hiểu thêm về cà phê này', 'Deepen Your Knowledge')}
+              </h2>
+            </div>
+            <Link
+              to={localePath('/journal')}
+              className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline whitespace-nowrap"
+            >
+              {t('Khám phá thư viện kiến thức B001–B050 →', 'Explore B001–B050 Journal →')}
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {matchedJournalArticles.map((art) => (
+              <Link
+                key={art.slug}
+                to={localePath(`/journal/${art.slug}`)}
+                className="group bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-5 flex flex-col justify-between gap-3 hover:border-[#00552B]/40 dark:hover:border-[#C6A667]/40 hover:-translate-y-0.5 transition-all"
+              >
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-[#202020]/55 dark:text-[#F1EFEA]/55">
+                    <span className="font-mono font-bold text-[#00552B] dark:text-[#C6A667]">
+                      {art.nodeMeta?.code || 'JOURNAL'}
+                    </span>
+                    {' · '}
+                    <span>{localizeJournalCategory(art.category, lang)}</span>
+                    {art.reading_time ? ` · ${art.reading_time}` : ''}
+                  </p>
+                  <h3 className="text-sm font-bold text-[#202020] dark:text-[#F1EFEA] leading-snug line-clamp-2 group-hover:text-[#00552B] dark:group-hover:text-[#C6A667] transition-colors">
+                    {lang === 'vi' ? art.title_vi : art.title_en}
+                  </h3>
+                  <p className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65 leading-relaxed line-clamp-3">
+                    {lang === 'vi' ? art.excerpt_vi : art.excerpt_en}
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] inline-flex items-center gap-1 pt-1">
+                  {t('Đọc bài phân tích', 'Read Analysis')} →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Related Products */}
       {related.length > 0 && (
         <section className="space-y-6">
@@ -1194,6 +1364,40 @@ export const ProductDetailPage: React.FC = () => {
         initialMode={giftModalMode}
         onClose={() => setGiftModalOpen(false)}
       />
+
+      {/* Mobile Sticky Bottom Buy Bar (sits cleanly above MobileBottomNav) */}
+      {showStickyBuy && !cartOpen && !isGreen && (
+        <div className="lg:hidden fixed bottom-[56px] inset-x-0 z-30 h-[52px] bg-white/95 dark:bg-[#131F19]/95 backdrop-blur-md border-t border-[#202020]/12 dark:border-[#C6A667]/25 px-4 flex items-center justify-between gap-2.5 shadow-lg">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold text-[#202020] dark:text-[#F1EFEA] truncate">
+              {lang === 'vi' ? product.name_vi : product.name_en}
+            </p>
+            <p className="text-xs font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums truncate">
+              {formatPrice(effectiveUnitVnd * quantity, effectiveUnitUsd * quantity)}{' '}
+              <span className="font-normal opacity-70">
+                · {hasVolumeTiers ? `${quantity} kg` : localizeVariantLabel(activeVariant.label, lang)}
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleAdd(false)}
+              className="px-3 py-1.5 rounded-lg border border-[#00552B] dark:border-[#C6A667] text-[#00552B] dark:text-[#C6A667] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>{t('+ Giỏ', '+ Cart')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAdd(true)}
+              className="px-3.5 py-1.5 rounded-lg bg-[#00552B] text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+            >
+              {t('Mua ngay', 'Buy Now')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

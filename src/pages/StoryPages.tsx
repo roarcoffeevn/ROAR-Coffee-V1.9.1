@@ -5,6 +5,7 @@ import { AboutBrandContent } from '../components/AboutBrandContent';
 import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import { AdminPageEditLink } from '../components/AdminPageEditBar';
 import { B2BInquiryModal } from '../components/B2BInquiryModal';
+import { BrewTimerCalculator } from '../components/BrewTimerCalculator';
 import { MediaImage } from '../components/MediaImage';
 import { VietnamOriginMap } from '../components/VietnamOriginMap';
 import { useI18n } from '../i18n/I18nContext';
@@ -388,6 +389,8 @@ export const BrewingGuidePage: React.FC = () => {
           <span>{t(active.troubleVi, active.troubleEn)}</span>
         </div>
       </div>
+
+      <BrewTimerCalculator />
 
       {page?.sections && page.sections.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

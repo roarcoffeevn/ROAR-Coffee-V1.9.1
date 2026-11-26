@@ -65,10 +65,11 @@ import { TeamRbacSection, type AdminTeamMember, type NonAdminCandidate } from '.
 import { AdminMenuCategoryManager } from '../components/admin/AdminMenuCategoryManager';
 import { AdminHeroBannerManager } from '../components/admin/AdminHeroBannerManager';
 import { AdminGamesManager } from '../components/admin/AdminGamesManager';
+import { AdminCombosManager } from '../components/admin/AdminCombosManager';
 import { ResetPasswordModal, type ResetPasswordTarget } from '../components/admin/ResetPasswordModal';
 import { AdminOverviewDashboard } from '../components/admin/AdminOverviewDashboard';
 
-type CmsSection = AdminPermission | 'menus' | 'hero' | 'games';
+type CmsSection = AdminPermission | 'menus' | 'hero' | 'games' | 'combos';
 
 const CATEGORY_LABELS_VI: Record<string, string> = {
   roasted: 'Cà phê Rang xay',
@@ -314,7 +315,9 @@ export const AdminCmsPage: React.FC = () => {
         ? hasAdminPermission(user, 'settings')
         : requestedSectionParam === 'games'
           ? hasAdminPermission(user, 'promotions')
-          : hasAdminPermission(user, requestedSectionParam))
+          : requestedSectionParam === 'combos'
+            ? hasAdminPermission(user, 'promotions') || hasAdminPermission(user, 'products')
+            : hasAdminPermission(user, requestedSectionParam))
     ) {
       setSection(requestedSectionParam);
     }
@@ -851,6 +854,7 @@ export const AdminCmsPage: React.FC = () => {
           count: customers.length,
         },
         { id: 'promotions', label: t('Khuyến mãi', 'Promotions'), icon: <Tag className="w-4 h-4" />, count: promotions.length },
+        { id: 'combos', label: t('Combo & Quà tặng', 'Combos & Bundles'), icon: <PackageCheck className="w-4 h-4" /> },
         { id: 'games', label: t('Game & Quà tặng', 'Games & Gifts'), icon: <Gamepad2 className="w-4 h-4" /> },
       ],
     },
@@ -885,7 +889,9 @@ export const AdminCmsPage: React.FC = () => {
           ? hasAdminPermission(user, 'settings')
           : item.id === 'games'
             ? hasAdminPermission(user, 'promotions')
-            : hasAdminPermission(user, item.id)
+            : item.id === 'combos'
+              ? hasAdminPermission(user, 'promotions') || hasAdminPermission(user, 'products')
+              : hasAdminPermission(user, item.id)
       ),
     }))
     .filter((grp) => grp.items.length > 0);
@@ -2287,6 +2293,15 @@ export const AdminCmsPage: React.FC = () => {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* 7A. STOREFRONT COMBO & BUNDLE MANAGER */}
+          {resolvedSection === 'combos' && (hasAdminPermission(user, 'promotions') || hasAdminPermission(user, 'products')) && (
+            <AdminCombosManager
+              products={products}
+              promotions={promotions}
+              formatPrice={(v) => `${Number(v || 0).toLocaleString('vi-VN')}₫`}
+            />
           )}
 
           {/* 7B. MINI-GAMES, REWARDS & ATTACHED GIFTS (GAME & QUÀ TẶNG) */}

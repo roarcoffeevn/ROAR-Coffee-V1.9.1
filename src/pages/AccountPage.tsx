@@ -14,7 +14,7 @@ import { printOrderInvoice } from '../lib/printDocuments';
 
 export const AccountPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
-  const { user, setAuthSession, clearAuthSession, apiFetch, refreshUser, formatPrice, addToCart, showToast, vcbRate, settings } = useStore();
+  const { user, setAuthSession, clearAuthSession, apiFetch, refreshUser, formatPrice, addToCart, setCartOpen, showToast, vcbRate, settings } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -832,6 +832,52 @@ export const AccountPage: React.FC = () => {
             currentTierName={activeTierName}
             onViewBenefits={() => switchTab('rewards')}
           />
+
+          {dash.orders.length > 0 && (() => {
+            const latestOrder = dash.orders[0];
+            const parsedTime = new Date(latestOrder.created_at).getTime();
+            const daysAgo = Number.isFinite(parsedTime)
+              ? Math.max(0, Math.floor((Date.now() - parsedTime) / 86400000))
+              : 0;
+            const firstItemName =
+              latestOrder.items?.[0]
+                ? lang === 'vi'
+                  ? latestOrder.items[0].product_name_vi
+                  : latestOrder.items[0].product_name_en
+                : latestOrder.order_number;
+            return (
+              <div className="bg-gradient-to-r from-[#00552B]/10 via-[#C6A667]/10 to-[#00552B]/5 dark:from-[#00552B]/30 dark:via-[#C6A667]/12 dark:to-[#16221C] rounded-xl border border-[#00552B]/20 dark:border-[#C6A667]/30 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-[#00552B] dark:text-[#C6A667] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{t('Gợi ý Bổ sung Hạt Rang Mới', 'Smart Fresh-Roast Refill Reminder')}</span>
+                  </p>
+                  <p className="text-sm font-semibold text-[#202020] dark:text-[#F1EFEA]">
+                    {daysAgo > 0
+                      ? t(
+                          `Đơn gần nhất (${firstItemName}) đã đặt từ ${daysAgo} ngày trước — đến lúc bổ sung cà phê rang mới!`,
+                          `Your last order (${firstItemName}) was ${daysAgo} days ago — ready for a fresh-roast refill?`
+                        )
+                      : t(
+                          `Đặt lại nhanh đơn ${latestOrder.order_number} (${firstItemName}) chỉ với 1 chạm.`,
+                          `Instantly repeat order ${latestOrder.order_number} (${firstItemName}) in one tap.`
+                        )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    reorder(latestOrder);
+                    setCartOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{t('Đặt lại ngay (1 chạm)', '1-Click Refill')}</span>
+                </button>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7 bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-6 space-y-4">

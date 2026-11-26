@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AdaptiveLogo } from './components/AdaptiveLogo';
 import { Breadcrumb } from './components/Breadcrumb';
+import { CafeChillPlayer } from './components/CafeChillPlayer';
 import { CartDrawer } from './components/CartDrawer';
 import { FloatingAssistDock } from './components/FloatingAssistDock';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
+import { LiveActivityToast } from './components/LiveActivityToast';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
 import { StoreProvider } from './context/StoreContext';
@@ -214,6 +216,8 @@ function AppLayout() {
       </main>
       <Footer />
       <MobileBottomNav />
+      <CafeChillPlayer />
+      <LiveActivityToast />
       <FloatingAssistDock />
       <OfflineIndicator />
       <CartDrawer />

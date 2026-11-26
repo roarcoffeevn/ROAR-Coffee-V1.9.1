@@ -25,6 +25,11 @@ import journalCoffeeProcesses from '../assets/images/journal_coffee_processes_17
 import journalS18Roastery from '../assets/images/journal_s18_roastery_1795239117151.jpg';
 import journalTastingArchetypes from '../assets/images/journal_tasting_archetypes_1795239116993.jpg';
 import journalColdbrewGifting from '../assets/images/journal_coldbrew_gifting_1795239117775.jpg';
+import journalCoffeeBotany from '../assets/images/journal_coffee_botany_1795684603257.jpg';
+import journalDefectSorting from '../assets/images/journal_defect_sorting_1795684604332.jpg';
+import journalWaterChemistry from '../assets/images/journal_water_chemistry_1795684605095.jpg';
+import journalCuppingLab from '../assets/images/journal_cupping_lab_1795684605578.jpg';
+import journalSustainableFarm from '../assets/images/journal_sustainable_farm_1795684605480.jpg';
 import pepperGroundBlackJar from '../assets/images/pepper_ground_black_jar_1795427600636.jpg';
 import pepperHulledWhiteJar from '../assets/images/pepper_hulled_white_jar_1795427600767.jpg';
 import pepperBlackGrinderJar from '../assets/images/pepper_black_grinder_jar_1795427602042.jpg';
@@ -68,6 +73,11 @@ export const MEDIA_ASSETS: Record<string, string> = {
   journal_s18_roastery: journalS18Roastery,
   journal_tasting_archetypes: journalTastingArchetypes,
   journal_coldbrew_gifting: journalColdbrewGifting,
+  journal_coffee_botany: journalCoffeeBotany,
+  journal_defect_sorting: journalDefectSorting,
+  journal_water_chemistry: journalWaterChemistry,
+  journal_cupping_lab: journalCuppingLab,
+  journal_sustainable_farm: journalSustainableFarm,
   pepper_ground_black_jar: pepperGroundBlackJar,
   pepper_hulled_white_jar: pepperHulledWhiteJar,
   pepper_black_grinder_jar: pepperBlackGrinderJar,
@@ -133,6 +143,11 @@ export const BUILTIN_MEDIA_ITEMS: BuiltinMediaItem[] = [
   { key: 'journal_s18_roastery', labelVi: 'Tạp chí: Rang hạt S18 cho quán Espresso', labelEn: 'Journal: S18 Roastery & Espresso Bar', category: 'Tạp chí', url: journalS18Roastery },
   { key: 'journal_tasting_archetypes', labelVi: 'Tạp chí: 7 Cá tính & Gu thưởng thức', labelEn: 'Journal: 7 Personalities Tasting Flight', category: 'Tạp chí', url: journalTastingArchetypes },
   { key: 'journal_coldbrew_gifting', labelVi: 'Tạp chí: Cold Brew 16h & Quà tặng Cao cấp', labelEn: 'Journal: Cold Brew & Executive Gifting', category: 'Tạp chí', url: journalColdbrewGifting },
+  { key: 'journal_coffee_botany', labelVi: 'Tạp chí: Hoa & Quả chín Cà phê Cao nguyên', labelEn: 'Journal: Highland Coffee Blossom & Cherries', category: 'Tạp chí', url: journalCoffeeBotany },
+  { key: 'journal_defect_sorting', labelVi: 'Tạp chí: Sàng lọc S18 & Máy đo độ ẩm nhân xanh', labelEn: 'Journal: Green Bean Sieve & Moisture Analysis', category: 'Tạp chí', url: journalDefectSorting },
+  { key: 'journal_water_chemistry', labelVi: 'Tạp chí: Rót Pour-Over & Chiết xuất V60', labelEn: 'Journal: Precision Pour-Over & Bloom Extraction', category: 'Tạp chí', url: journalWaterChemistry },
+  { key: 'journal_cupping_lab', labelVi: 'Tạp chí: Phòng Lab Cupping Q-Grader', labelEn: 'Journal: Specialty Coffee Cupping Session', category: 'Tạp chí', url: journalCuppingLab },
+  { key: 'journal_sustainable_farm', labelVi: 'Tạp chí: Nông lâm kết hợp & Vườn cà phê bền vững', labelEn: 'Journal: Sustainable Highland Shade Agroforestry', category: 'Tạp chí', url: journalSustainableFarm },
   { key: 'pepper_ground_black_jar', labelVi: 'Tiêu Đen Xay Nguyên Chất (Hũ 45g / 90g)', labelEn: 'Pure Ground Black Pepper Jar (45g / 90g)', category: 'Tiêu Tây Nguyên', url: pepperGroundBlackJar },
   { key: 'pepper_hulled_white_jar', labelVi: 'Tiêu Đen Sọ Nguyên Hạt (Hũ 45g / 90g)', labelEn: 'Whole Hulled Pepper Jar (45g / 90g)', category: 'Tiêu Tây Nguyên', url: pepperHulledWhiteJar },
   { key: 'pepper_black_grinder_jar', labelVi: 'Tiêu Đen Hạt Cối Xay 70g', labelEn: 'Black Peppercorns Built-In Grinder (70g)', category: 'Tiêu Tây Nguyên', url: pepperBlackGrinderJar },

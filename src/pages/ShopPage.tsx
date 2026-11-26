@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight, Gift, Heart, Printer, Search } from 'lucide-react';
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Eye, Gamepad2, Gift, Heart, Printer, Scale, Search, Tag, X } from 'lucide-react';
 import { GiftVoucherModal } from '../components/GiftVoucherModal';
 import { MediaImage } from '../components/MediaImage';
 import { RecentlyViewedStrip } from '../components/RecentlyViewedStrip';
@@ -18,7 +18,7 @@ interface ShopPageProps {
 
 export const ShopPage: React.FC<ShopPageProps> = ({ defaultCategory = 'all' }) => {
   const { lang, t, localePath } = useI18n();
-  const { settings, formatPrice, currency, setCurrency, addToCart, wishlist, toggleWishlist, showToast } = useStore();
+  const { settings, formatPrice, currency, setCurrency, addToCart, wishlist, toggleWishlist, showToast, activeGameClaims, pendingVoucherCode, setPendingVoucherCode } = useStore();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -35,6 +35,27 @@ export const ShopPage: React.FC<ShopPageProps> = ({ defaultCategory = 'all' }) =
   const [giftModalProduct, setGiftModalProduct] = useState<Product | null>(null);
   const [giftModalMode, setGiftModalMode] = useState<'self' | 'gift'>('gift');
   const [catBannerIdx, setCatBannerIdx] = useState(0);
+  const [compareSlugs, setCompareSlugs] = useState<string[]>([]);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const [qvVariantIdx, setQvVariantIdx] = useState(0);
+  const [qvQty, setQvQty] = useState(1);
+
+  const toggleCompare = (slug: string) => {
+    setCompareSlugs((prev) => {
+      if (prev.includes(slug)) return prev.filter((s) => s !== slug);
+      if (prev.length >= 3) {
+        showToast(t('Chỉ so sánh tối đa 3 sản phẩm cùng lúc', 'Compare up to 3 products at once'));
+        return prev;
+      }
+      return [...prev, slug];
+    });
+  };
+
+  const compareProducts = useMemo(
+    () => products.filter((p) => compareSlugs.includes(p.slug)),
+    [products, compareSlugs]
+  );
 
   const matchingCategoryBanners = useMemo(
     () =>
@@ -214,6 +235,61 @@ export const ShopPage: React.FC<ShopPageProps> = ({ defaultCategory = 'all' }) =
           </div>
         </div>
       </div>
+
+      {/* Game-to-Order Bridge Strip */}
+      {(() => {
+        const usableClaim = activeGameClaims.find((c) => c.promo_code);
+        return (
+          <div className="rounded-xl border border-[#00552B]/15 dark:border-[#C6A667]/25 bg-white dark:bg-[#16221C] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+            {usableClaim ? (
+              <>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Tag className="w-4 h-4 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                  <p className="text-[#202020] dark:text-[#F1EFEA] truncate">
+                    {t('Bạn đang có mã từ Mini-Game:', 'Active Mini-Game Reward:')}{' '}
+                    <span className="font-mono font-bold text-[#00552B] dark:text-[#C6A667]">{usableClaim.promo_code}</span>{' '}
+                    <span className="opacity-70">({lang === 'en' ? usableClaim.reward_label_en : usableClaim.reward_label_vi})</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingVoucherCode(usableClaim.promo_code);
+                    showToast(t(`Đã chọn mã ${usableClaim.promo_code} cho giỏ hàng!`, `Queued ${usableClaim.promo_code} for checkout!`));
+                  }}
+                  className={`px-3 py-1 rounded-md font-semibold cursor-pointer whitespace-nowrap transition-colors ${
+                    pendingVoucherCode === usableClaim.promo_code
+                      ? 'bg-[#00552B] text-white'
+                      : 'bg-[#00552B]/10 dark:bg-[#C6A667]/15 text-[#00552B] dark:text-[#C6A667] hover:bg-[#00552B] hover:text-white'
+                  }`}
+                >
+                  {pendingVoucherCode === usableClaim.promo_code
+                    ? t('Đang áp dụng ở giỏ hàng', 'Queued for Cart')
+                    : t('Gắn mã vào giỏ hàng', 'Apply to Cart')}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Gamepad2 className="w-4 h-4 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                  <p className="text-[#202020]/80 dark:text-[#F1EFEA]/80 truncate">
+                    {t(
+                      'Mỗi đơn từ 100k tặng ngay +40 điểm ROAR (+2 lượt chơi 16 Mini-Game săn quà & voucher giảm giá).',
+                      'Every order from 100k VND earns +40 instant ROAR points (+2 Mini-Game plays for gifts & vouchers).'
+                    )}
+                  </p>
+                </div>
+                <Link
+                  to={localePath('/play')}
+                  className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline whitespace-nowrap shrink-0"
+                >
+                  {t('Chơi 16 Mini-Game săn mã →', 'Play & Win Vouchers →')}
+                </Link>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Category Showcase Banner (Managed via Admin CMS -> Banner Danh Mục Sản Phẩm) */}
       {(() => {
@@ -472,6 +548,34 @@ export const ShopPage: React.FC<ShopPageProps> = ({ defaultCategory = 'all' }) =
                           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                         />
                       </Link>
+                      <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickViewProduct(p);
+                            setQvVariantIdx(0);
+                            setQvQty(1);
+                          }}
+                          aria-label={t('Xem nhanh', 'Quick View')}
+                          title={t('Xem nhanh & chọn quy cách', 'Quick View')}
+                          className="w-8 h-8 rounded-full bg-white/90 dark:bg-[#16221C]/90 flex items-center justify-center text-[#202020] dark:text-[#F1EFEA] hover:text-[#00552B] dark:hover:text-[#C6A667] cursor-pointer shadow-sm"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleCompare(p.slug)}
+                          aria-label={t('So sánh sản phẩm', 'Compare product')}
+                          title={t('So sánh (tối đa 3)', 'Compare (up to 3)')}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer shadow-sm transition-colors ${
+                            compareSlugs.includes(p.slug)
+                              ? 'bg-[#00552B] text-white'
+                              : 'bg-white/90 dark:bg-[#16221C]/90 text-[#202020] dark:text-[#F1EFEA] hover:text-[#00552B] dark:hover:text-[#C6A667]'
+                          }`}
+                        >
+                          <Scale className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => toggleWishlist(p.slug)}
@@ -798,6 +902,308 @@ export const ShopPage: React.FC<ShopPageProps> = ({ defaultCategory = 'all' }) =
         );
       })()}
       <RecentlyViewedStrip />
+
+      {/* Floating Compare Dock */}
+      {compareProducts.length > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white dark:bg-[#16221C] border-2 border-[#00552B] dark:border-[#C6A667] rounded-2xl shadow-xl px-4 py-2.5 flex items-center gap-3 max-w-[94vw]">
+          <Scale className="w-4 h-4 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {compareProducts.map((cp) => (
+              <span
+                key={cp.slug}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#F8F5EF] dark:bg-[#0E1512] text-[11px] font-semibold whitespace-nowrap"
+              >
+                <span className="max-w-[90px] truncate">{lang === 'vi' ? cp.name_vi : cp.name_en}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleCompare(cp.slug)}
+                  className="text-[#202020]/50 hover:text-red-500 cursor-pointer"
+                  aria-label="Remove compare item"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={compareProducts.length < 2}
+            onClick={() => setCompareModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-[#00552B] hover:bg-[#003D25] disabled:opacity-45 text-white text-xs font-bold whitespace-nowrap cursor-pointer"
+          >
+            {t(`So sánh (${compareProducts.length})`, `Compare (${compareProducts.length})`)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCompareSlugs([])}
+            className="text-[11px] text-[#202020]/60 dark:text-[#F1EFEA]/60 hover:underline whitespace-nowrap cursor-pointer"
+          >
+            {t('Xóa', 'Clear')}
+          </button>
+        </div>
+      )}
+
+      {/* Side-by-Side Comparison Modal */}
+      {compareModalOpen && compareProducts.length >= 2 && (
+        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4" onClick={() => setCompareModalOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/15 dark:border-white/15 max-w-4xl w-full max-h-[88vh] overflow-y-auto p-5 sm:p-7 space-y-5 shadow-2xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[#202020]/10 dark:border-white/10 pb-3">
+              <h3 className="text-lg font-bold text-[#202020] dark:text-[#F1EFEA] flex items-center gap-2">
+                <Scale className="w-5 h-5 text-[#00552B] dark:text-[#C6A667]" />
+                <span>{t('So Sánh Hương Vị & Thông Số Cà Phê', 'Side-by-Side Coffee Comparison')}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCompareModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-[#F8F5EF] dark:hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#202020]/10 dark:border-white/10">
+                    <th className="py-2 pr-4 font-semibold text-[#202020]/60 dark:text-[#F1EFEA]/60 w-36">
+                      {t('Tiêu chí', 'Attribute')}
+                    </th>
+                    {compareProducts.map((cp) => (
+                      <th key={cp.slug} className="py-2 px-3 min-w-[180px] align-top">
+                        <Link
+                          to={localePath(`/product/${cp.slug}`)}
+                          onClick={() => setCompareModalOpen(false)}
+                          className="block space-y-2 group"
+                        >
+                          <div className="w-20 aspect-[4/5] rounded-lg overflow-hidden bg-[#F8F5EF]">
+                            <MediaImage imageKey={cp.image_key} alt={cp.name_vi} className="w-full h-full object-cover" />
+                          </div>
+                          <span className="font-bold text-sm text-[#202020] dark:text-[#F1EFEA] group-hover:text-[#00552B] block">
+                            {lang === 'vi' ? cp.name_vi : cp.name_en}
+                          </span>
+                        </Link>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#202020]/8 dark:divide-white/10">
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Giá từ', 'Price')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3 font-mono font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                        {formatPrice(cp.variants?.[0]?.priceVnd || cp.price_vnd, cp.variants?.[0]?.priceUsd || cp.price_usd)}
+                        {cp.category === 'roasted_beans' || cp.category === 'green_bean' ? '/kg' : ''}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Dòng hạt', 'Coffee Type')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">{localizeCoffeeType(cp.coffee_type, lang)}</td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Vùng nguyên liệu', 'Origin')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">{cp.origin_region || 'Tây Nguyên'}</td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Hồ sơ rang', 'Roast Profile')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">{lang === 'vi' ? cp.roast_profile_vi : cp.roast_profile_en}</td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Chế biến', 'Process')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">{cp.processing_method || 'CBU / Natural'}</td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Cách pha hợp', 'Brew Methods')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">
+                        {(cp.brewing_methods || []).length > 0 ? cp.brewing_methods.join(', ') : t('Đa dụng', 'Versatile')}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-3 pr-4 font-semibold opacity-70">{t('Hành động', 'Action')}</td>
+                    {compareProducts.map((cp) => (
+                      <td key={cp.slug} className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = cp.variants?.[0];
+                            addToCart({
+                              productId: cp.id,
+                              slug: cp.slug,
+                              sku: cp.sku,
+                              nameVi: cp.name_vi,
+                              nameEn: cp.name_en,
+                              variantLabel: v?.label || 'Standard',
+                              unitPriceVnd: v?.priceVnd || cp.price_vnd,
+                              unitPriceUsd: v?.priceUsd || cp.price_usd,
+                              quantity: 1,
+                              imageKey: cp.image_key,
+                            });
+                            showToast(t(`Đã thêm ${cp.name_vi}`, `Added ${cp.name_en}`));
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white font-semibold cursor-pointer"
+                        >
+                          {t('+ Thêm vào giỏ', '+ Add to Cart')}
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick View Modal */}
+      {quickViewProduct && (
+        <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4" onClick={() => setQuickViewProduct(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/15 dark:border-white/15 max-w-2xl w-full overflow-hidden shadow-2xl grid grid-cols-1 sm:grid-cols-12"
+          >
+            <div className="sm:col-span-5 aspect-[4/5] sm:aspect-auto bg-[#F8F5EF] dark:bg-[#0E1512]">
+              <MediaImage
+                imageKey={quickViewProduct.image_key}
+                alt={lang === 'vi' ? quickViewProduct.name_vi : quickViewProduct.name_en}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="sm:col-span-7 p-5 sm:p-6 flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-mono text-[#00552B] dark:text-[#C6A667] font-semibold">
+                      {quickViewProduct.sku} · {localizeCoffeeType(quickViewProduct.coffee_type, lang)}
+                    </p>
+                    <h3 className="text-lg font-bold text-[#202020] dark:text-[#F1EFEA] mt-0.5">
+                      {lang === 'vi' ? quickViewProduct.name_vi : quickViewProduct.name_en}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickViewProduct(null)}
+                    className="p-1.5 rounded-lg hover:bg-[#F8F5EF] dark:hover:bg-white/10 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-[#202020]/70 dark:text-[#F1EFEA]/70 line-clamp-3">
+                  {lang === 'vi' ? quickViewProduct.description_vi : quickViewProduct.description_en}
+                </p>
+
+                {quickViewProduct.variants && quickViewProduct.variants.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-[#202020]/70 dark:text-[#F1EFEA]/70 block">
+                      {t('Chọn quy cách:', 'Select Variant:')}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {quickViewProduct.variants.map((v, idx) => (
+                        <button
+                          key={v.label}
+                          type="button"
+                          onClick={() => setQvVariantIdx(idx)}
+                          className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer ${
+                            qvVariantIdx === idx
+                              ? 'border-[#00552B] bg-[#00552B] text-white'
+                              : 'border-[#202020]/15 dark:border-white/15'
+                          }`}
+                        >
+                          {v.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {(() => {
+                const chosenVar = quickViewProduct.variants?.[qvVariantIdx];
+                const isKg = quickViewProduct.category === 'roasted_beans' && (quickViewProduct.pricing_tiers?.length || 0) > 0;
+                const activeTier = isKg ? resolveVolumeTier(quickViewProduct.pricing_tiers!, qvQty) : null;
+                const unitVnd = activeTier ? activeTier.priceVnd : chosenVar?.priceVnd || quickViewProduct.price_vnd;
+                const unitUsd = activeTier ? activeTier.priceUsd : chosenVar?.priceUsd || quickViewProduct.price_usd;
+                return (
+                  <div className="space-y-3 pt-3 border-t border-[#202020]/10 dark:border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-lg font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                        {formatPrice(unitVnd * qvQty, unitUsd * qvQty)}
+                      </span>
+                      <div className="inline-flex items-center border border-[#202020]/15 dark:border-white/15 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setQvQty((q) => Math.max(1, q - 1))}
+                          className="w-7 h-7 font-bold cursor-pointer"
+                        >
+                          −
+                        </button>
+                        <span className="px-2.5 text-xs font-mono font-bold tabular-nums">{qvQty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQvQty((q) => q + 1)}
+                          className="w-7 h-7 font-bold cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addToCart({
+                            productId: quickViewProduct.id,
+                            slug: quickViewProduct.slug,
+                            sku: quickViewProduct.sku,
+                            nameVi: quickViewProduct.name_vi,
+                            nameEn: quickViewProduct.name_en,
+                            variantLabel: isKg
+                              ? `${qvQty} kg${activeTier ? ` · ${activeTier.labelVi}` : ''}`
+                              : chosenVar?.label || 'Standard',
+                            unitPriceVnd: unitVnd,
+                            unitPriceUsd: unitUsd,
+                            quantity: qvQty,
+                            imageKey: quickViewProduct.image_key,
+                            unit: isKg ? 'kg' : 'unit',
+                            pricingTiers: isKg ? quickViewProduct.pricing_tiers : undefined,
+                          });
+                          showToast(t('Đã thêm vào giỏ hàng', 'Added to cart'));
+                          setQuickViewProduct(null);
+                        }}
+                        className="flex-1 py-2.5 bg-[#00552B] hover:bg-[#003D25] text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center justify-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{t('Thêm vào giỏ hàng', 'Add to Cart')}</span>
+                      </button>
+                      <Link
+                        to={localePath(`/product/${quickViewProduct.slug}`)}
+                        onClick={() => setQuickViewProduct(null)}
+                        className="px-3.5 py-2.5 border border-[#202020]/20 dark:border-white/20 text-xs font-semibold rounded-lg whitespace-nowrap"
+                      >
+                        {t('Chi tiết →', 'Details →')}
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       <GiftVoucherModal
         isOpen={Boolean(giftModalProduct)}
         initialProduct={giftModalProduct}
