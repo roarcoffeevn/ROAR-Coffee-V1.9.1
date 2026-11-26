@@ -233,6 +233,8 @@ export async function fetchJournalWithFallback(queryParams?: URLSearchParams): P
     .map((a) => ({
       ...a,
       tags: Array.isArray(a.tags) ? a.tags : safeParseJson(a.tags_json, []),
+      gallery: Array.isArray(a.gallery) ? a.gallery : safeParseJson(a.gallery_json, []),
+      chart_type: String(a.chart_type || ''),
     }));
 }
 
@@ -259,6 +261,8 @@ export async function fetchArticleBySlugWithFallback(
     article: {
       ...found,
       tags: Array.isArray(found.tags) ? found.tags : safeParseJson(found.tags_json, []),
+      gallery: Array.isArray(found.gallery) ? found.gallery : safeParseJson(found.gallery_json, []),
+      chart_type: String(found.chart_type || ''),
     },
     related,
   };

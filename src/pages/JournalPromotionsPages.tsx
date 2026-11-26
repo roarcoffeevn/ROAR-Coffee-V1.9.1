@@ -3,35 +3,44 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
+  Award,
+  Bookmark,
   BookOpen,
+  Check,
   CheckCircle2,
   ChevronRight,
   Compass,
   Copy,
   FileCheck2,
+  Headphones,
   Lightbulb,
   Link2,
   ListTree,
   MapPin,
+  Pause,
   Search,
   ShoppingBag,
   Sparkles,
+  Sun,
   Tag,
+  Type,
   Users,
 } from 'lucide-react';
 import { JournalCharts } from '../components/JournalCharts';
 import { JournalFlowchart } from '../components/JournalFlowchart';
 import { MediaImage } from '../components/MediaImage';
+import { roarCafeAudio, type CafeAudioState } from '../components/RoarCafeAudioEngine';
 import { useI18n } from '../i18n/I18nContext';
 import { type Product, useStore } from '../context/StoreContext';
 import { localizeBrewingMethod, localizeJournalCategory } from '../lib/i18nHelpers';
-import { getArticleEnrichment } from '../lib/journalEnrichments';
+import { getArticleEnrichment, type JournalFigure } from '../lib/journalEnrichments';
 import {
   FIND_YOUR_COFFEE_NEEDS,
   getNodeByCode,
   getNodeBySlug,
   JOURNAL_CURRICULUM_B001_B050,
   JOURNAL_PILLARS,
+  type JournalChartType,
 } from '../lib/journalEcosystem';
 import { getPromoVoucherImage, resolveMediaUrl } from '../lib/media';
 import { updateCustomSeoHead, upsertJsonLd } from '../lib/routeSeo';
@@ -41,6 +50,43 @@ import {
   fetchProductsWithFallback,
   fetchPromotionsWithFallback,
 } from '../lib/staticFallback';
+
+const READ_STORAGE_KEY = 'roar_read_articles_v1';
+const SAVED_STORAGE_KEY = 'roar_saved_articles_v1';
+
+function readSlugList(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSlugList(key: string, slugs: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.from(new Set(slugs)).slice(0, 120)));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function isSafeHref(url: string): boolean {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/')) return true;
+  if (/^(https?:|mailto:)/i.test(trimmed)) return true;
+  return false;
+}
+
+function isSafeImageSrc(src: string): boolean {
+  const trimmed = String(src || '').trim();
+  if (!trimmed) return false;
+  if (/^(javascript|data|vbscript):/i.test(trimmed)) return false;
+  return true;
+}
 
 export const PromotionsPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
@@ -155,6 +201,8 @@ export const JournalPage: React.FC = () => {
   const [selectedNeedId, setSelectedNeedId] = useState<string>(FIND_YOUR_COFFEE_NEEDS[0].id);
   const [activePillarId, setActivePillarId] = useState<string>('01');
   const [roadmapOpen, setRoadmapOpen] = useState(true);
+  const [readSlugs, setReadSlugs] = useState<string[]>(() => readSlugList(READ_STORAGE_KEY));
+  const [savedSlugs, setSavedSlugs] = useState<string[]>(() => readSlugList(SAVED_STORAGE_KEY));
 
   useEffect(() => {
     const qCat = searchParams.get('category');
@@ -169,13 +217,24 @@ export const JournalPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (category === 'saved') {
+      const q = search.trim().toLowerCase();
+      const savedSet = new Set(savedSlugs);
+      const filtered = allArticles.filter((a) => {
+        if (!savedSet.has(a.slug)) return false;
+        if (!q) return true;
+        return `${a.title_vi} ${a.title_en} ${a.excerpt_vi} ${a.slug}`.toLowerCase().includes(q);
+      });
+      setArticles(filtered);
+      return;
+    }
     const params = new URLSearchParams();
     if (category !== 'all') params.set('category', category);
     if (search.trim()) params.set('search', search.trim());
     fetchJournalWithFallback(params).then((list) => setArticles(list || []));
-  }, [category, search]);
+  }, [category, search, savedSlugs, allArticles]);
 
-  const categories = ['all', 'Coffee knowledge', 'Coffee processing', 'Coffee varieties', 'Brewing techniques', 'Coffee origins'];
+  const categories = ['all', 'saved', 'Coffee knowledge', 'Coffee processing', 'Coffee varieties', 'Brewing techniques', 'Coffee origins'];
 
   const handleSelectCategory = (nextCat: string) => {
     setCategory(nextCat);
@@ -190,8 +249,49 @@ export const JournalPage: React.FC = () => {
     );
   };
 
-  const countForCategory = (c: string) =>
-    c === 'all' ? allArticles.length : allArticles.filter((item) => item.category === c).length;
+  const toggleSaveSlug = (slug: string) => {
+    setSavedSlugs((prev) => {
+      const exists = prev.includes(slug);
+      const next = exists ? prev.filter((s) => s !== slug) : [...prev, slug];
+      writeSlugList(SAVED_STORAGE_KEY, next);
+      return next;
+    });
+  };
+
+  const countForCategory = (c: string) => {
+    if (c === 'all') return allArticles.length;
+    if (c === 'saved') return allArticles.filter((item) => savedSlugs.includes(item.slug)).length;
+    return allArticles.filter((item) => item.category === c).length;
+  };
+
+  const readSlugSet = useMemo(() => new Set(readSlugs), [readSlugs]);
+  const savedSlugSet = useMemo(() => new Set(savedSlugs), [savedSlugs]);
+
+  const passportStats = useMemo(() => {
+    const curriculumTotal = JOURNAL_CURRICULUM_B001_B050.length;
+    const completedCurriculum = JOURNAL_CURRICULUM_B001_B050.filter((n) => n.slug && readSlugSet.has(n.slug)).length;
+    const nextUnread = JOURNAL_CURRICULUM_B001_B050.find(
+      (n) => n.slug && !readSlugSet.has(n.slug) && allArticles.some((a) => a.slug === n.slug)
+    );
+    const pct = curriculumTotal > 0 ? Math.round((completedCurriculum / curriculumTotal) * 100) : 0;
+    const rankVi =
+      completedCurriculum >= 40
+        ? 'Bậc Thầy Cà Phê ROAR'
+        : completedCurriculum >= 20
+        ? 'Chuyên Gia Rang & Chiết Xuất'
+        : completedCurriculum >= 8
+        ? 'Nhà Thám Hiểm Nông Trại'
+        : 'Người Khám Phá Mới';
+    const rankEn =
+      completedCurriculum >= 40
+        ? 'ROAR Coffee Grandmaster'
+        : completedCurriculum >= 20
+        ? 'Roast & Extraction Specialist'
+        : completedCurriculum >= 8
+        ? 'Origin Explorer'
+        : 'Curious Coffee Reader';
+    return { curriculumTotal, completedCurriculum, nextUnread, pct, rankVi, rankEn };
+  }, [readSlugSet, allArticles]);
 
   const publishedSlugSet = useMemo(() => new Set(allArticles.map((a) => a.slug)), [allArticles]);
 
@@ -295,6 +395,67 @@ export const JournalPage: React.FC = () => {
             </div>
           </Link>
         )}
+      </section>
+
+      {/* 1.5 ROAR Coffee Knowledge Passport (B001–B050 Progress & Saved Library) */}
+      <section className="rounded-2xl bg-white dark:bg-[#16221C] border border-[#202020]/10 dark:border-white/10 p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div className="space-y-2 flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-mono font-bold uppercase tracking-wider text-[#00552B] dark:text-[#C6A667]">
+              <Award className="w-4 h-4" />
+              {t('Hộ Chiếu Tri Thức Cà Phê', 'Coffee Knowledge Passport')}
+            </span>
+            <span className="text-[#202020]/40 dark:text-[#F1EFEA]/40">·</span>
+            <span className="font-semibold text-[#202020] dark:text-[#F1EFEA]">
+              {t(passportStats.rankVi, passportStats.rankEn)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-2 rounded-full bg-[#EFECE4] dark:bg-[#0E1512] overflow-hidden">
+              <div
+                className="h-full bg-[#00552B] dark:bg-[#C6A667] transition-all duration-300"
+                style={{ width: `${passportStats.pct}%` }}
+              />
+            </div>
+            <span className="text-xs font-mono font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums shrink-0">
+              {passportStats.completedCurriculum}/{passportStats.curriculumTotal} ({passportStats.pct}%)
+            </span>
+          </div>
+          <p className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65">
+            {t(
+              'Hệ thống tự động đóng dấu khi bạn đọc xong mỗi bài trong lộ trình B001–B050 và lưu danh sách bài yêu thích ngay trên máy.',
+              'Articles auto-stamp as read while you explore the B001–B050 curriculum, with bookmarks stored locally.'
+            )}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {passportStats.nextUnread?.slug && (
+            <Link
+              to={localePath(`/journal/${passportStats.nextUnread.slug}`)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white text-xs font-semibold transition-colors whitespace-nowrap"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>
+                {t(`Đọc tiếp ${passportStats.nextUnread.code}`, `Continue ${passportStats.nextUnread.code}`)}
+              </span>
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => handleSelectCategory(category === 'saved' ? 'all' : 'saved')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+              category === 'saved'
+                ? 'bg-[#C6A667] border-[#C6A667] text-[#111111]'
+                : 'bg-[#F8F5EF] dark:bg-[#0E1512] border-[#202020]/15 dark:border-white/15 text-[#202020] dark:text-[#F1EFEA]'
+            }`}
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span className="tabular-nums">
+              {t('Đã lưu', 'Saved')} ({savedSlugs.length})
+            </span>
+          </button>
+        </div>
       </section>
 
       {/* 2. 10-Pillar B001–B050 Learning Roadmap Explorer */}
@@ -512,10 +673,16 @@ export const JournalPage: React.FC = () => {
                       : 'bg-white dark:bg-[#16221C] border border-[#202020]/15 dark:border-white/15 text-[#202020]/80 dark:text-[#F1EFEA]/80 hover:border-[#00552B]/50'
                   }`}
                 >
-                  <span>{c === 'all' ? t('Tất cả chuyên mục', 'All Topics') : localizeJournalCategory(c, lang)}</span>
+                  <span>
+                    {c === 'all'
+                      ? t('Tất cả chuyên mục', 'All Topics')
+                      : c === 'saved'
+                      ? t('Bài đã lưu', 'Saved Articles')
+                      : localizeJournalCategory(c, lang)}
+                  </span>
                   {allArticles.length > 0 && (
                     <span
-                      className={`font-mono text-[11px] ${
+                      className={`font-mono text-[11px] tabular-nums ${
                         category === c ? 'text-[#C6A667]' : 'text-[#202020]/45 dark:text-[#F1EFEA]/45'
                       }`}
                     >
@@ -559,26 +726,44 @@ export const JournalPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {sortedArticles.map((a) => {
               const nodeMeta = getNodeBySlug(a.slug);
+              const isRead = readSlugSet.has(a.slug);
+              const isSaved = savedSlugSet.has(a.slug);
               return (
                 <article
                   key={a.id}
                   className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 overflow-hidden flex flex-col hover:-translate-y-0.5 transition-transform"
                 >
-                  <Link
-                    to={localePath(`/journal/${a.slug}`)}
-                    className="aspect-[4/5] bg-[#F8F5EF] dark:bg-[#0E1512] overflow-hidden block relative"
-                  >
-                    <MediaImage
-                      imageKey={a.image_key}
-                      alt={lang === 'vi' ? a.title_vi : a.title_en}
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="aspect-[4/5] bg-[#F8F5EF] dark:bg-[#0E1512] overflow-hidden relative">
+                    <Link to={localePath(`/journal/${a.slug}`)} className="block w-full h-full">
+                      <MediaImage
+                        imageKey={a.image_key}
+                        alt={lang === 'vi' ? a.title_vi : a.title_en}
+                        className="w-full h-full object-cover"
+                      />
+                    </Link>
                     {nodeMeta && (
                       <span className="absolute top-3 left-3 px-2.5 py-1 rounded bg-[#111111]/85 text-[#C6A667] font-mono text-[11px] font-bold">
                         {nodeMeta.code}
                       </span>
                     )}
-                  </Link>
+                    <button
+                      type="button"
+                      onClick={() => toggleSaveSlug(a.slug)}
+                      title={isSaved ? t('Bỏ lưu bài viết', 'Remove bookmark') : t('Lưu bài viết', 'Bookmark article')}
+                      className={`absolute top-3 right-3 p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        isSaved
+                          ? 'bg-[#C6A667] border-[#C6A667] text-[#111111]'
+                          : 'bg-[#111111]/70 border-white/20 text-white hover:bg-[#111111]'
+                      }`}
+                    >
+                      <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-current' : ''}`} />
+                    </button>
+                    {isRead && (
+                      <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded bg-[#00552B]/90 text-white text-[10px] font-semibold inline-flex items-center gap-1">
+                        <Check className="w-3 h-3" /> {t('Đã đọc', 'Read')}
+                      </span>
+                    )}
+                  </div>
                   <div className="p-5 space-y-2.5 flex-1 flex flex-col justify-between">
                     <div className="space-y-2">
                       <div className="text-xs text-[#202020]/55 dark:text-[#F1EFEA]/55 flex flex-wrap items-center gap-2">
@@ -630,6 +815,9 @@ function renderInlineMarkdown(text: string, localePath: (path: string) => string
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (linkMatch) {
       const [, label, href] = linkMatch;
+      if (!isSafeHref(href)) {
+        return <React.Fragment key={idx}>{label}</React.Fragment>;
+      }
       if (href.startsWith('/')) {
         return (
           <Link
@@ -723,6 +911,36 @@ function parseRichArticleBody(
           {renderInlineMarkdown(text, localePath)}
         </h3>
       );
+      i += 1;
+      continue;
+    }
+
+    // Inline Markdown Image: ![caption](urlOrMediaKey)
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      const [, altRaw, srcRaw] = imgMatch;
+      const cleanSrc = srcRaw.trim();
+      if (isSafeImageSrc(cleanSrc)) {
+        pushBlock(
+          <figure
+            key={`mdimg-${i}`}
+            className="my-4 rounded-xl overflow-hidden border border-[#202020]/10 dark:border-white/10 bg-[#F8F5EF]/60 dark:bg-[#0E1512]"
+          >
+            <div className="aspect-[16/10] overflow-hidden bg-[#F8F5EF] dark:bg-[#0E1512]">
+              <MediaImage
+                imageKey={cleanSrc}
+                alt={altRaw.trim() || 'ROAR Coffee Journal'}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            {altRaw.trim() && (
+              <figcaption className="px-4 py-2.5 text-xs italic text-[#202020]/70 dark:text-[#F1EFEA]/70 text-center">
+                {altRaw.trim()}
+              </figcaption>
+            )}
+          </figure>
+        );
+      }
       i += 1;
       continue;
     }
@@ -862,9 +1080,20 @@ export const JournalArticlePage: React.FC = () => {
   const [related, setRelated] = useState<any[]>([]);
   const [allArticles, setAllArticles] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [fontScale, setFontScale] = useState<'normal' | 'large' | 'xlarge'>('normal');
+  const [warmPaper, setWarmPaper] = useState(false);
+  const [audioState, setAudioState] = useState<CafeAudioState>(() => roarCafeAudio.getState());
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isReadStamped, setIsReadStamped] = useState(false);
+
+  useEffect(() => roarCafeAudio.subscribe(setAudioState), []);
 
   useEffect(() => {
     if (!slug) return;
+    setScrollProgress(0);
+    setIsBookmarked(readSlugList(SAVED_STORAGE_KEY).includes(slug));
+    setIsReadStamped(readSlugList(READ_STORAGE_KEY).includes(slug));
     fetchArticleBySlugWithFallback(slug).then((d) => {
       if (d) {
         setArticle(d.article);
@@ -876,6 +1105,67 @@ export const JournalArticlePage: React.FC = () => {
       .then((list) => setAllProducts(list || []))
       .catch(() => {});
   }, [slug]);
+
+  useEffect(() => {
+    if (!article?.slug) return;
+    const onScroll = () => {
+      const doc = document.documentElement;
+      const total = Math.max(1, doc.scrollHeight - window.innerHeight);
+      const pct = Math.min(1, Math.max(0, window.scrollY / total));
+      setScrollProgress(pct);
+      if (pct >= 0.55) {
+        const current = readSlugList(READ_STORAGE_KEY);
+        if (!current.includes(article.slug)) {
+          writeSlugList(READ_STORAGE_KEY, [...current, article.slug]);
+          setIsReadStamped(true);
+        }
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [article?.slug]);
+
+  const handleToggleBookmark = () => {
+    if (!article?.slug) return;
+    const current = readSlugList(SAVED_STORAGE_KEY);
+    if (current.includes(article.slug)) {
+      writeSlugList(
+        SAVED_STORAGE_KEY,
+        current.filter((s) => s !== article.slug)
+      );
+      setIsBookmarked(false);
+      showToast(t('Đã bỏ lưu bài viết', 'Removed bookmark'));
+    } else {
+      writeSlugList(SAVED_STORAGE_KEY, [...current, article.slug]);
+      setIsBookmarked(true);
+      showToast(t('Đã lưu bài viết vào thư viện của bạn', 'Saved article to your library'));
+    }
+  };
+
+  const handleToggleReadStamp = () => {
+    if (!article?.slug) return;
+    const current = readSlugList(READ_STORAGE_KEY);
+    if (current.includes(article.slug)) {
+      writeSlugList(
+        READ_STORAGE_KEY,
+        current.filter((s) => s !== article.slug)
+      );
+      setIsReadStamped(false);
+    } else {
+      writeSlugList(READ_STORAGE_KEY, [...current, article.slug]);
+      setIsReadStamped(true);
+      showToast(t('Đã đóng dấu hoàn thành bài viết trong Hộ Chiếu!', 'Stamped as read in your Coffee Passport!'));
+    }
+  };
+
+  const handleToggleChillAudio = () => {
+    if (audioState.playing) {
+      roarCafeAudio.stop();
+    } else {
+      roarCafeAudio.start();
+    }
+  };
 
   const nodeMeta = useMemo(() => getNodeBySlug(article?.slug), [article?.slug]);
   const pillarMeta = useMemo(
@@ -991,8 +1281,37 @@ export const JournalArticlePage: React.FC = () => {
 
   const glossaryItems = lang === 'vi' ? nodeMeta?.glossaryVi : nodeMeta?.glossaryEn;
 
+  const effectiveVisualFigures: JournalFigure[] =
+    Array.isArray(article.gallery) && article.gallery.length > 0
+      ? article.gallery.filter((fig: any) => fig && typeof fig.imageKey === 'string' && isSafeImageSrc(fig.imageKey))
+      : enrichment?.visualFigures || [];
+
+  const effectiveChartType: JournalChartType | null =
+    article.chart_type === 'none'
+      ? null
+      : (article.chart_type as JournalChartType) || enrichment?.chartType || null;
+
+  const readingBodySizeClass =
+    fontScale === 'xlarge'
+      ? '[&_p]:text-lg [&_li]:text-lg [&_p]:leading-8 [&_li]:leading-8'
+      : fontScale === 'large'
+      ? '[&_p]:text-[17px] [&_li]:text-[17px] [&_p]:leading-[1.8] [&_li]:leading-[1.8]'
+      : '';
+
   return (
-    <article className="max-w-[920px] mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-8">
+    <>
+      {/* Top Scroll Reading Progress Hairline */}
+      <div
+        aria-hidden="true"
+        className="fixed top-0 left-0 right-0 z-40 h-[2.5px] bg-transparent pointer-events-none"
+      >
+        <div
+          className="h-full bg-[#00552B] dark:bg-[#C6A667] origin-left transition-transform duration-75"
+          style={{ transform: `scaleX(${scrollProgress})` }}
+        />
+      </div>
+
+      <article className="max-w-[920px] mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link to={localePath('/journal')} className="inline-flex items-center gap-1.5 text-xs text-[#00552B] dark:text-[#C6A667] hover:underline">
           <ArrowLeft className="w-3.5 h-3.5" /> {t('Quay lại Tạp Chí Cà Phê', 'Back to Coffee Journal')}
@@ -1039,6 +1358,93 @@ export const JournalArticlePage: React.FC = () => {
         <p className="text-base text-[#202020]/75 dark:text-[#F1EFEA]/75 leading-relaxed">
           {lang === 'vi' ? article.excerpt_vi : article.excerpt_en}
         </p>
+
+        {/* Chill Reading Studio Controls */}
+        <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#202020]/10 dark:border-white/10">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleChillAudio}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                audioState.playing
+                  ? 'bg-[#C6A667] text-[#111111]'
+                  : 'bg-[#00552B] text-white hover:bg-[#003D25]'
+              }`}
+            >
+              {audioState.playing ? <Pause className="w-3.5 h-3.5" /> : <Headphones className="w-3.5 h-3.5" />}
+              <span>
+                {audioState.playing
+                  ? t('Đang phát nhạc Chill', 'Chill Lo-Fi Playing')
+                  : t('Bật nhạc Chill khi đọc', 'Play Reading Lo-Fi')}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarmPaper((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-colors ${
+                warmPaper
+                  ? 'bg-[#F4EAD5] border-[#C6A667] text-[#3B2A1A]'
+                  : 'bg-white dark:bg-[#16221C] border-[#202020]/15 dark:border-white/15 text-[#202020]/80 dark:text-[#F1EFEA]/80'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+              <span>{t('Giấy ấm', 'Warm Paper')}</span>
+            </button>
+
+            <div className="inline-flex items-center rounded-lg border border-[#202020]/15 dark:border-white/15 bg-white dark:bg-[#16221C] overflow-hidden text-xs">
+              <button
+                type="button"
+                onClick={() => setFontScale((s) => (s === 'xlarge' ? 'large' : 'normal'))}
+                disabled={fontScale === 'normal'}
+                className="px-2.5 py-1.5 font-mono hover:bg-[#F8F5EF] dark:hover:bg-white/5 disabled:opacity-40 cursor-pointer"
+                title={t('Giảm cỡ chữ', 'Decrease font size')}
+              >
+                A-
+              </button>
+              <span className="px-1.5 text-[10px] text-[#202020]/50 dark:text-[#F1EFEA]/50 border-x border-[#202020]/10 dark:border-white/10">
+                <Type className="w-3 h-3" />
+              </span>
+              <button
+                type="button"
+                onClick={() => setFontScale((s) => (s === 'normal' ? 'large' : 'xlarge'))}
+                disabled={fontScale === 'xlarge'}
+                className="px-2.5 py-1.5 font-mono hover:bg-[#F8F5EF] dark:hover:bg-white/5 disabled:opacity-40 cursor-pointer"
+                title={t('Tăng cỡ chữ', 'Increase font size')}
+              >
+                A+
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleBookmark}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
+                isBookmarked
+                  ? 'bg-[#C6A667]/20 border-[#C6A667] text-[#7A5B1F] dark:text-[#C6A667]'
+                  : 'bg-white dark:bg-[#16221C] border-[#202020]/15 dark:border-white/15 text-[#202020]/80 dark:text-[#F1EFEA]/80'
+              }`}
+            >
+              <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
+              <span>{isBookmarked ? t('Đã lưu', 'Saved') : t('Lưu bài', 'Save')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleReadStamp}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
+                isReadStamped
+                  ? 'bg-[#00552B]/12 border-[#00552B] text-[#00552B] dark:bg-[#00552B]/30 dark:border-[#C6A667] dark:text-[#C6A667]'
+                  : 'bg-white dark:bg-[#16221C] border-[#202020]/15 dark:border-white/15 text-[#202020]/75 dark:text-[#F1EFEA]/75'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{isReadStamped ? t('Đã đóng dấu đọc', 'Stamped Read') : t('Đánh dấu đã đọc', 'Mark Read')}</span>
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* Hero Editorial Visual (Fig. 1) */}
@@ -1154,7 +1560,13 @@ export const JournalArticlePage: React.FC = () => {
       )}
 
       {/* Main Article Body + Interleaved Visual Figures, Interactive Chart & Process Flowchart */}
-      <div className="bg-white dark:bg-[#16221C] rounded-2xl border border-[#202020]/10 dark:border-white/10 p-6 sm:p-10 space-y-6">
+      <div
+        className={`rounded-2xl border p-6 sm:p-10 space-y-6 transition-colors ${readingBodySizeClass} ${
+          warmPaper
+            ? 'bg-[#FBF5E6] dark:bg-[#1B1811] border-[#C6A667]/40 text-[#2C2014] dark:text-[#F2E9D8]'
+            : 'bg-white dark:bg-[#16221C] border-[#202020]/10 dark:border-white/10'
+        }`}
+      >
         {/* Opening Sections (1-2) */}
         {parsedContent.sections.slice(0, 2).map((sec, sIdx) => (
           <div key={`sec-top-${sIdx}`} className="space-y-5">
@@ -1162,12 +1574,12 @@ export const JournalArticlePage: React.FC = () => {
           </div>
         ))}
 
-        {/* Curated Visual Figures (Fig. 2 - Fig. 3) */}
-        {enrichment && enrichment.visualFigures.slice(0, 2).length > 0 && (
+        {/* Curated or CMS-Managed Visual Figures (Fig. 2 - Fig. 3) */}
+        {effectiveVisualFigures.slice(0, 2).length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
-            {enrichment.visualFigures.slice(0, 2).map((fig, idx) => (
+            {effectiveVisualFigures.slice(0, 2).map((fig, idx) => (
               <figure
-                key={`fig-top-${fig.imageKey}`}
+                key={`fig-top-${idx}-${fig.imageKey}`}
                 className="rounded-xl overflow-hidden border border-[#202020]/10 dark:border-white/10 bg-[#F8F5EF]/50 dark:bg-[#0E1512] flex flex-col"
               >
                 <div className="aspect-[4/3] overflow-hidden bg-[#F8F5EF] dark:bg-[#0E1512]">
@@ -1189,10 +1601,12 @@ export const JournalArticlePage: React.FC = () => {
         {parsedContent.sections[2] && <div className="space-y-5">{parsedContent.sections[2]}</div>}
 
         {/* Dedicated Analytical Chart & Step-by-Step Process Flowchart */}
-        {enrichment && nodeMeta && (
+        {(effectiveChartType || (enrichment && nodeMeta)) && (
           <div className="space-y-4">
-            <JournalCharts chartType={enrichment.chartType} lang={lang} />
-            <JournalFlowchart flowchart={enrichment.flowchart} articleCode={nodeMeta.code} lang={lang} />
+            {effectiveChartType && <JournalCharts chartType={effectiveChartType} lang={lang} />}
+            {enrichment && nodeMeta && (
+              <JournalFlowchart flowchart={enrichment.flowchart} articleCode={nodeMeta.code} lang={lang} />
+            )}
           </div>
         )}
 
@@ -1203,16 +1617,16 @@ export const JournalArticlePage: React.FC = () => {
           </div>
         ))}
 
-        {/* Supporting Visual Figures Gallery (Fig. 4 - Fig. 6) */}
-        {enrichment && enrichment.visualFigures.slice(2).length > 0 && (
+        {/* Supporting Visual Figures Gallery (Fig. 4 - Fig. 6+) */}
+        {effectiveVisualFigures.slice(2).length > 0 && (
           <div
             className={`grid grid-cols-1 ${
-              enrichment.visualFigures.slice(2).length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+              effectiveVisualFigures.slice(2).length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
             } gap-4 pt-2`}
           >
-            {enrichment.visualFigures.slice(2).map((fig, idx) => (
+            {effectiveVisualFigures.slice(2).map((fig, idx) => (
               <figure
-                key={`fig-bot-${fig.imageKey}`}
+                key={`fig-bot-${idx}-${fig.imageKey}`}
                 className="rounded-xl overflow-hidden border border-[#202020]/10 dark:border-white/10 bg-[#F8F5EF]/50 dark:bg-[#0E1512] flex flex-col"
               >
                 <div className="aspect-[4/3] overflow-hidden bg-[#F8F5EF] dark:bg-[#0E1512]">
@@ -1538,5 +1952,6 @@ export const JournalArticlePage: React.FC = () => {
         </section>
       )}
     </article>
+    </>
   );
 };

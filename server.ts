@@ -3064,6 +3064,46 @@ app.post('/api/newsletter', (req, res) => {
 });
 
 // ---------- JOURNAL ----------
+function isSafeImageKeyOrUrl(val: unknown): string {
+  const s = String(val || '').trim().slice(0, 600);
+  if (!s) return '';
+  if (/^(javascript|data|vbscript):/i.test(s)) return '';
+  return s;
+}
+
+function parseJournalGalleryJson(raw: unknown): Array<{ imageKey: string; captionVi: string; captionEn: string }> {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw || '[]') : Array.isArray(raw) ? raw : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .slice(0, 10)
+      .map((item: any) => ({
+        imageKey: isSafeImageKeyOrUrl(item?.imageKey),
+        captionVi: String(item?.captionVi || '').trim().slice(0, 400),
+        captionEn: String(item?.captionEn || item?.captionVi || '').trim().slice(0, 400),
+      }))
+      .filter((item) => Boolean(item.imageKey));
+  } catch {
+    return [];
+  }
+}
+
+function mapJournalRow(a: any) {
+  let tags: string[] = [];
+  try {
+    tags = JSON.parse(a.tags_json || '[]');
+  } catch {
+    tags = [];
+  }
+  return {
+    ...a,
+    tags,
+    gallery: parseJournalGalleryJson(a.gallery_json),
+    chart_type: String(a.chart_type || ''),
+    cms_edited: Number(a.cms_edited || 0),
+  };
+}
+
 app.get('/api/journal', (req, res) => {
   const { category, search } = req.query;
   let sql = 'SELECT * FROM journal_articles WHERE published = 1';
@@ -3078,10 +3118,7 @@ app.get('/api/journal', (req, res) => {
     params.push(q, q, q, q);
   }
   sql += ' ORDER BY published_at DESC, id DESC';
-  const articles = db.prepare(sql).all(...params).map((a: any) => ({
-    ...a,
-    tags: JSON.parse(a.tags_json || '[]'),
-  }));
+  const articles = db.prepare(sql).all(...params).map(mapJournalRow);
   res.json({ articles });
 });
 
@@ -3095,9 +3132,10 @@ app.get('/api/journal/:slug', (req, res) => {
     .prepare(
       'SELECT * FROM journal_articles WHERE id != ? AND published = 1 ORDER BY CASE WHEN category = ? THEN 0 ELSE 1 END, published_at DESC, id DESC LIMIT 3'
     )
-    .all(article.id, article.category);
+    .all(article.id, article.category)
+    .map(mapJournalRow);
   res.json({
-    article: { ...article, tags: JSON.parse(article.tags_json || '[]') },
+    article: mapJournalRow(article),
     related,
   });
 });
@@ -5766,10 +5804,7 @@ app.delete('/api/admin/media/:id', requirePermission('media'), (req: AuthedReque
 
 app.get('/api/admin/journal', requirePermission('posts'), (_req, res) => {
   const rows = db.prepare('SELECT * FROM journal_articles ORDER BY id DESC').all() as any[];
-  const articles = rows.map((a) => ({
-    ...a,
-    tags: JSON.parse(a.tags_json || '[]'),
-  }));
+  const articles = rows.map(mapJournalRow);
   res.json({ articles });
 });
 
@@ -5784,24 +5819,30 @@ app.post('/api/admin/journal', requirePermission('posts'), (req: AuthedRequest, 
   const conflict = db.prepare('SELECT id FROM journal_articles WHERE slug = ?').get(slug);
   if (conflict) slug = `${slug}-${Date.now().toString().slice(-4)}`;
 
+  const safeCover = isSafeImageKeyOrUrl(b.image_key) || 'hero_roar_coffee';
+  const safeGallery = parseJournalGalleryJson(b.gallery);
+  const safeChartType = String(b.chart_type || '').trim().slice(0, 60);
+
   const resInsert = db
     .prepare(`
-      INSERT INTO journal_articles (slug, category, tags_json, title_vi, title_en, excerpt_vi, excerpt_en, content_vi, content_en, author, read_minutes, image_key, published)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO journal_articles (slug, category, tags_json, title_vi, title_en, excerpt_vi, excerpt_en, content_vi, content_en, author, read_minutes, image_key, gallery_json, chart_type, cms_edited, published)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
     `)
     .run(
       slug,
-      b.category,
-      JSON.stringify(Array.isArray(b.tags) ? b.tags : []),
+      String(b.category).trim().slice(0, 80),
+      JSON.stringify(Array.isArray(b.tags) ? b.tags.map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 20) : []),
       String(b.title_vi).trim(),
       String(b.title_en || b.title_vi).trim(),
-      b.excerpt_vi || '',
-      b.excerpt_en || b.excerpt_vi || '',
-      b.content_vi || '',
-      b.content_en || b.content_vi || '',
-      b.author || 'Ban Biên Tập ROAR COFFEE',
-      Number(b.read_minutes || 4),
-      b.image_key || 'hero_roar_coffee',
+      String(b.excerpt_vi || ''),
+      String(b.excerpt_en || b.excerpt_vi || ''),
+      String(b.content_vi || ''),
+      String(b.content_en || b.content_vi || ''),
+      String(b.author || 'Ban Biên Tập ROAR COFFEE').trim().slice(0, 120),
+      Math.max(1, Math.min(60, Number(b.read_minutes || 4) || 4)),
+      safeCover,
+      JSON.stringify(safeGallery),
+      safeChartType,
       b.published === 0 || b.published === false ? 0 : 1
     );
   const newId = Number(resInsert.lastInsertRowid);
@@ -5819,26 +5860,43 @@ app.patch('/api/admin/journal/:id', requirePermission('posts'), (req: AuthedRequ
   }
   const b = req.body || {};
   const nextSlug = b.slug ? toSafeSlug(b.slug) || existing.slug : existing.slug;
+  if (nextSlug !== existing.slug) {
+    const slugConflict = db.prepare('SELECT id FROM journal_articles WHERE slug = ? AND id != ?').get(nextSlug, id);
+    if (slugConflict) {
+      res.status(409).json({ error: 'Đường dẫn tĩnh (slug) này đã tồn tại ở bài viết khác.' });
+      return;
+    }
+  }
+  const nextImageKey = b.image_key !== undefined ? isSafeImageKeyOrUrl(b.image_key) || existing.image_key : existing.image_key;
+  const nextGalleryJson =
+    b.gallery !== undefined ? JSON.stringify(parseJournalGalleryJson(b.gallery)) : existing.gallery_json || '[]';
+  const nextChartType =
+    b.chart_type !== undefined ? String(b.chart_type || '').trim().slice(0, 60) : existing.chart_type || '';
+
   db.prepare(`
     UPDATE journal_articles SET
       slug = ?, category = ?, tags_json = ?,
       title_vi = ?, title_en = ?, excerpt_vi = ?, excerpt_en = ?,
       content_vi = ?, content_en = ?, author = ?, read_minutes = ?,
-      image_key = ?, published = ?
+      image_key = ?, gallery_json = ?, chart_type = ?, cms_edited = 1, published = ?
     WHERE id = ?
   `).run(
     nextSlug,
-    b.category ?? existing.category,
-    b.tags !== undefined ? JSON.stringify(b.tags) : existing.tags_json,
-    b.title_vi ?? existing.title_vi,
-    b.title_en ?? existing.title_en,
-    b.excerpt_vi ?? existing.excerpt_vi,
-    b.excerpt_en ?? existing.excerpt_en,
-    b.content_vi ?? existing.content_vi,
-    b.content_en ?? existing.content_en,
-    b.author ?? existing.author,
-    b.read_minutes !== undefined ? Number(b.read_minutes) : existing.read_minutes,
-    b.image_key ?? existing.image_key,
+    b.category !== undefined ? String(b.category).trim().slice(0, 80) : existing.category,
+    b.tags !== undefined
+      ? JSON.stringify(Array.isArray(b.tags) ? b.tags.map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 20) : [])
+      : existing.tags_json,
+    b.title_vi !== undefined ? String(b.title_vi).trim() : existing.title_vi,
+    b.title_en !== undefined ? String(b.title_en).trim() : existing.title_en,
+    b.excerpt_vi !== undefined ? String(b.excerpt_vi) : existing.excerpt_vi,
+    b.excerpt_en !== undefined ? String(b.excerpt_en) : existing.excerpt_en,
+    b.content_vi !== undefined ? String(b.content_vi) : existing.content_vi,
+    b.content_en !== undefined ? String(b.content_en) : existing.content_en,
+    b.author !== undefined ? String(b.author).trim().slice(0, 120) : existing.author,
+    b.read_minutes !== undefined ? Math.max(1, Math.min(60, Number(b.read_minutes) || 4)) : existing.read_minutes,
+    nextImageKey,
+    nextGalleryJson,
+    nextChartType,
     b.published !== undefined ? (b.published ? 1 : 0) : existing.published,
     id
   );

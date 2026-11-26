@@ -1,7 +1,15 @@
 // Web Audio API generative soundscape engine for ROAR Café Chill
 // Synthesizes warm lo-fi Rhodes chords, Highland rain texture, and cozy Phin coffee bar ambiance.
 
-export type CafeTrackId = 'highland_dawn' | 'dalat_rain' | 'reserve_night';
+export type CafeTrackId = 'highland_dawn' | 'dalat_rain' | 'reserve_night' | 'midnight_vinyl';
+
+export interface CafeAudioState {
+  playing: boolean;
+  trackId: CafeTrackId;
+  lofi: number;
+  rain: number;
+  cafe: number;
+}
 
 interface TrackConfig {
   bpm: number;
@@ -40,6 +48,16 @@ const TRACKS: Record<CafeTrackId, TrackConfig> = {
     ],
     melody: [440.0, 523.25, 493.88, 392.0, 349.23, 329.63, 293.66, 329.63],
   },
+  midnight_vinyl: {
+    bpm: 60,
+    chords: [
+      [130.81, 164.81, 196.0, 246.94, 293.66], // Cmaj9
+      [110.0, 164.81, 196.0, 246.94, 261.63], // Am9
+      [146.83, 174.61, 220.0, 261.63, 329.63], // Dm9
+      [196.0, 246.94, 293.66, 349.23], // G13
+    ],
+    melody: [392.0, 440.0, 493.88, 523.25, 440.0, 392.0, 329.63, 293.66],
+  },
 };
 
 class RoarCafeAudioEngine {
@@ -61,6 +79,37 @@ class RoarCafeAudioEngine {
   private lofiLevel = 0.65;
   private rainLevel = 0.35;
   private cafeLevel = 0.25;
+
+  private listeners = new Set<(state: CafeAudioState) => void>();
+
+  public getState(): CafeAudioState {
+    return {
+      playing: this.playing,
+      trackId: this.trackId,
+      lofi: Math.round(this.lofiLevel * 100),
+      rain: Math.round(this.rainLevel * 100),
+      cafe: Math.round(this.cafeLevel * 100),
+    };
+  }
+
+  public subscribe(listener: (state: CafeAudioState) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.getState());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify() {
+    const snap = this.getState();
+    this.listeners.forEach((cb) => {
+      try {
+        cb(snap);
+      } catch {
+        // ignore listener errors
+      }
+    });
+  }
 
   private ensureContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
@@ -213,7 +262,7 @@ class RoarCafeAudioEngine {
 
   private scheduleChordBeat = () => {
     if (!this.playing || !this.ctx) return;
-    const track = TRACKS[this.trackId];
+    const track = TRACKS[this.trackId] || TRACKS.highland_dawn;
     const barDurationSec = (60 / track.bpm) * 4;
     const now = this.ctx.currentTime + 0.04;
     const chord = track.chords[this.stepIdx % track.chords.length];
@@ -250,6 +299,7 @@ class RoarCafeAudioEngine {
     this.masterGain.gain.setTargetAtTime(1, ctx.currentTime, 0.18);
     this.scheduleChordBeat();
     this.scheduleNextDrip();
+    this.notify();
   }
 
   public stop() {
@@ -266,6 +316,7 @@ class RoarCafeAudioEngine {
       this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
       this.masterGain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.14);
     }
+    this.notify();
   }
 
   public setTrack(id: CafeTrackId) {
@@ -278,6 +329,7 @@ class RoarCafeAudioEngine {
       }
       this.scheduleChordBeat();
     }
+    this.notify();
   }
 
   public setLevels(levels: { lofi?: number; rain?: number; cafe?: number }) {
@@ -300,6 +352,7 @@ class RoarCafeAudioEngine {
         this.cafeGain.gain.setTargetAtTime(this.cafeLevel * 0.14, ctx.currentTime, 0.08);
       }
     }
+    this.notify();
   }
 }
 

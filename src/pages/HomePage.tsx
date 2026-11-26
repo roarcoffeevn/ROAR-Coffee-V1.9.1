@@ -41,6 +41,7 @@ import {
   type GameKey,
 } from '../lib/gamesCatalog';
 import { AdaptiveLogo } from '../components/AdaptiveLogo';
+import { DailyChillRitualBar } from '../components/DailyChillRitualBar';
 import { FlashComboSection } from '../components/FlashComboSection';
 import { MediaImage } from '../components/MediaImage';
 import { TasteFinderSection } from '../components/TasteFinderSection';
@@ -612,6 +613,9 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
       )}
+
+      {/* TIME-OF-DAY CHILL COFFEE RITUAL & AMBIENT AUDIO STRIP */}
+      <DailyChillRitualBar />
 
       {/* INTERACTIVE CLICK-TO-EXPAND MINI-GAMES SHOWCASE LAUNCHER */}
       <section className="max-w-[1280px] mx-auto px-5 sm:px-6 pt-5">

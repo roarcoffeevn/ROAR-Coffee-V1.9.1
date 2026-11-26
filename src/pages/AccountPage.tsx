@@ -7,6 +7,7 @@ import { localizeLedgerEntry, localizeOrderStatus, localizePaymentStatus, locali
 import { MembershipTierVisualizer } from '../components/MembershipTierVisualizer';
 import { LoyaltyTierProgressCard } from '../components/LoyaltyTierProgressCard';
 import { DailyCheckinGame } from '../components/DailyCheckinGame';
+import { MyTastingNotebook } from '../components/MyTastingNotebook';
 import { MediaImage } from '../components/MediaImage';
 import { getPromoVoucherImage } from '../lib/media';
 import { getTierDisplayName, normalizeMembershipTierName } from '../lib/membershipTiers';
@@ -948,6 +949,8 @@ export const AccountPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          <MyTastingNotebook compact />
         </div>
       )}
 

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BookOpen, Clock, Coffee, Droplets, Search, ShoppingBag, Sparkles, Thermometer } from 'lucide-react';
 import { MediaImage } from '../components/MediaImage';
 import { BrewTimerCalculator } from '../components/BrewTimerCalculator';
+import { MyTastingNotebook } from '../components/MyTastingNotebook';
 import { useI18n } from '../i18n/I18nContext';
 import { type Product, useStore } from '../context/StoreContext';
 import { fetchProductsWithFallback } from '../lib/staticFallback';
@@ -588,6 +589,9 @@ export const BrewingHandbookPage: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Personal Brew & Tasting Diary */}
+      <MyTastingNotebook />
     </div>
   );
 };

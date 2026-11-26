@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { CloudRain, Coffee, Dices, Headphones, Music2, Pause, Play, RotateCcw, SlidersHorizontal, Timer, X } from 'lucide-react';
+import { CloudRain, Coffee, Dices, Headphones, Moon, Music2, Pause, Play, RotateCcw, SlidersHorizontal, Timer, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import { roarCafeAudio, type CafeTrackId } from './RoarCafeAudioEngine';
 
 const TRACK_PRESETS: Array<{ id: CafeTrackId; labelVi: string; labelEn: string; moodVi: string; moodEn: string }> = [
-  { id: 'highland_dawn', labelVi: 'Bình Minh Cao Nguyên', labelEn: 'Highland Dawn', moodVi: 'Rhodes 72 BPM', moodEn: 'Rhodes 72 BPM' },
-  { id: 'dalat_rain', labelVi: 'Mưa Nhẹ Đà Lạt', labelEn: 'Da Lat Drizzle', moodVi: 'Lo-Fi 68 BPM', moodEn: 'Lo-Fi 68 BPM' },
-  { id: 'reserve_night', labelVi: 'Đêm Reserve Ấm Áp', labelEn: 'Reserve Night', moodVi: 'Jazz 64 BPM', moodEn: 'Jazz 64 BPM' },
+  { id: 'highland_dawn', labelVi: 'Bình Minh', labelEn: 'Dawn', moodVi: 'Rhodes 72 BPM', moodEn: 'Rhodes 72 BPM' },
+  { id: 'dalat_rain', labelVi: 'Mưa Đà Lạt', labelEn: 'Da Lat Rain', moodVi: 'Lo-Fi 68 BPM', moodEn: 'Lo-Fi 68 BPM' },
+  { id: 'reserve_night', labelVi: 'Đêm Reserve', labelEn: 'Reserve', moodVi: 'Jazz 64 BPM', moodEn: 'Jazz 64 BPM' },
+  { id: 'midnight_vinyl', labelVi: 'Đĩa Than', labelEn: 'Vinyl 60', moodVi: 'Warm Vinyl 60 BPM', moodEn: 'Warm Vinyl 60 BPM' },
 ];
 
 const MOOD_DRINK_CARDS = [
@@ -99,6 +100,15 @@ export const CafeChillPlayer: React.FC = () => {
   const [focusSecLeft, setFocusSecLeft] = useState(25 * 60);
   const [focusRunning, setFocusRunning] = useState(false);
   const [moodIdx, setMoodIdx] = useState(0);
+  const [sleepSecLeft, setSleepSecLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    const unsub = roarCafeAudio.subscribe((st) => {
+      setPlaying(st.playing);
+      setTrack(st.trackId);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     roarCafeAudio.setLevels({
@@ -107,6 +117,21 @@ export const CafeChillPlayer: React.FC = () => {
       cafe: cafe / 100,
     });
   }, [lofi, rain, cafe]);
+
+  useEffect(() => {
+    if (sleepSecLeft === null) return;
+    const id = window.setInterval(() => {
+      setSleepSecLeft((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          roarCafeAudio.stop();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [sleepSecLeft !== null]);
 
   useEffect(() => {
     if (!focusRunning) return;
@@ -244,8 +269,8 @@ export const CafeChillPlayer: React.FC = () => {
                 </span>
               </div>
 
-              {/* Mood Presets */}
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#202020]/8 dark:border-white/10">
+              {/* Mood Presets (4 Ambient Tracks) */}
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#202020]/8 dark:border-white/10">
                 {TRACK_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
@@ -258,7 +283,7 @@ export const CafeChillPlayer: React.FC = () => {
                     }`}
                     title={t(preset.labelVi, preset.labelEn)}
                   >
-                    {t(preset.labelVi.split(' ').slice(0, 2).join(' '), preset.labelEn)}
+                    {t(preset.labelVi, preset.labelEn)}
                   </button>
                 ))}
               </div>
@@ -318,6 +343,44 @@ export const CafeChillPlayer: React.FC = () => {
                     className="w-full accent-[#00552B] dark:accent-[#C6A667] h-1.5 cursor-pointer"
                   />
                 </label>
+              </div>
+
+              {/* Sleep Auto-Off Timer */}
+              <div className="pt-2 border-t border-[#202020]/8 dark:border-white/10 flex items-center justify-between gap-2 text-[11px]">
+                <span className="inline-flex items-center gap-1.5 text-[#202020]/70 dark:text-[#F1EFEA]/70 font-medium whitespace-nowrap">
+                  <Moon className="w-3.5 h-3.5 text-[#00552B] dark:text-[#C6A667]" />
+                  <span>
+                    {sleepSecLeft !== null && sleepSecLeft > 0
+                      ? `${t('Tắt sau', 'Off in')} ${String(Math.floor(sleepSecLeft / 60)).padStart(2, '0')}:${String(sleepSecLeft % 60).padStart(2, '0')}`
+                      : t('Hẹn giờ tắt', 'Sleep timer')}
+                  </span>
+                </span>
+                <div className="flex items-center gap-1 font-mono tabular-nums">
+                  {[0, 15, 30, 60].map((mins) => {
+                    const secVal = sleepSecLeft ?? 0;
+                    const isActive =
+                      mins === 0 ? secVal === 0 : secVal > (mins - 15) * 60 && secVal <= mins * 60;
+                    return (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => {
+                          setSleepSecLeft(mins === 0 ? null : mins * 60);
+                          if (mins > 0 && !playing) {
+                            roarCafeAudio.start();
+                          }
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-pointer transition-colors ${
+                          isActive
+                            ? 'bg-[#00552B] text-white dark:bg-[#C6A667] dark:text-[#111111]'
+                            : 'bg-[#F8F5EF] dark:bg-[#0E1512] text-[#202020]/70 dark:text-[#F1EFEA]/70 hover:text-[#00552B] dark:hover:text-[#C6A667]'
+                        }`}
+                      >
+                        {mins === 0 ? t('Tắt', 'Off') : `${mins}m`}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : (

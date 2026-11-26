@@ -289,6 +289,9 @@ export function initDatabase(): void {
       author TEXT NOT NULL,
       read_minutes INTEGER NOT NULL DEFAULT 4,
       image_key TEXT NOT NULL,
+      gallery_json TEXT NOT NULL DEFAULT '[]',
+      chart_type TEXT NOT NULL DEFAULT '',
+      cms_edited INTEGER NOT NULL DEFAULT 0,
       published INTEGER NOT NULL DEFAULT 1,
       published_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -1932,10 +1935,24 @@ function seedInitialData(): void {
     }
   }
 
+  // Ensure journal_articles supports custom gallery figures, chart overrides, and CMS edit lock
+  const journalCols = (db.prepare('PRAGMA table_info(journal_articles)').all() as Array<{ name: string }>).map(
+    (c) => c.name
+  );
+  if (!journalCols.includes('gallery_json')) {
+    db.exec("ALTER TABLE journal_articles ADD COLUMN gallery_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!journalCols.includes('chart_type')) {
+    db.exec("ALTER TABLE journal_articles ADD COLUMN chart_type TEXT NOT NULL DEFAULT ''");
+  }
+  if (!journalCols.includes('cms_edited')) {
+    db.exec('ALTER TABLE journal_articles ADD COLUMN cms_edited INTEGER NOT NULL DEFAULT 0');
+  }
+
   // Idempotent full 50-node Journal Curriculum (B001–B050) from Batch A & Batch B seeds
   const extraJournalArticles = [...JOURNAL_SEEDS_BATCH_A, ...JOURNAL_SEEDS_BATCH_B];
 
-  const checkJournal = db.prepare('SELECT id, content_vi, author FROM journal_articles WHERE slug = ?');
+  const checkJournal = db.prepare('SELECT id, content_vi, author, cms_edited FROM journal_articles WHERE slug = ?');
   const insertJournal = db.prepare(`
     INSERT INTO journal_articles (slug, category, tags_json, title_vi, title_en, excerpt_vi, excerpt_en, content_vi, content_en, author, read_minutes, image_key, published)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
@@ -1947,7 +1964,9 @@ function seedInitialData(): void {
   `);
 
   for (const a of extraJournalArticles) {
-    const existing = checkJournal.get(a.slug) as { id: number; content_vi?: string; author?: string } | undefined;
+    const existing = checkJournal.get(a.slug) as
+      | { id: number; content_vi?: string; author?: string; cms_edited?: number }
+      | undefined;
     if (!existing) {
       insertJournal.run(
         a.slug,
@@ -1964,10 +1983,11 @@ function seedInitialData(): void {
         a.imageKey
       );
     } else if (
-      !String(existing.content_vi || '').includes('](') ||
-      (String(existing.author || '').startsWith('ROAR') && String(existing.content_vi || '') !== a.contentVi)
+      Number(existing.cms_edited || 0) !== 1 &&
+      (!String(existing.content_vi || '').includes('](') ||
+        (String(existing.author || '').startsWith('ROAR') && String(existing.content_vi || '') !== a.contentVi))
     ) {
-      // Sync expanded official ROAR seed articles cleanly while preserving custom non-ROAR edits
+      // Sync expanded official ROAR seed articles cleanly while NEVER overwriting CMS-edited articles
       updateJournal.run(
         a.category,
         JSON.stringify(a.tags),
