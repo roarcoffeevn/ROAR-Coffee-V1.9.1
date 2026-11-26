@@ -174,7 +174,7 @@ function createUserNotification(
     titleEn: string;
     messageVi: string;
     messageEn: string;
-    category: 'order' | 'promo' | 'loyalty' | 'system';
+    category: 'order' | 'promo' | 'loyalty' | 'system' | 'event';
     linkUrl?: string;
   }
 ): void {
@@ -2077,7 +2077,21 @@ app.post('/api/orders', (req: AuthedRequest, res) => {
       });
 
       if (product.inventory > 0) {
-        db.prepare('UPDATE products SET inventory = MAX(0, inventory - ?) WHERE id = ?').run(qty, product.id);
+        const nextQty = Math.max(0, Number(product.inventory) - qty);
+        db.prepare('UPDATE products SET inventory = ? WHERE id = ?').run(nextQty, product.id);
+        db.prepare(`
+          INSERT INTO inventory_logs (product_id, sku, product_name, delta, previous_qty, new_qty, reason, note, actor_email)
+          VALUES (?, ?, ?, ?, ?, ?, 'order_deduct', ?, ?)
+        `).run(
+          product.id,
+          product.sku,
+          product.name_vi,
+          nextQty - Number(product.inventory),
+          Number(product.inventory),
+          nextQty,
+          `Xuất kho tự động cho đơn hàng mới`,
+          req.authUser?.email || 'checkout'
+        );
       }
     }
 
@@ -3140,6 +3154,99 @@ app.get('/api/journal/:slug', (req, res) => {
   });
 });
 
+const HANDBOOK_TOPIC_LABELS: Record<string, { vi: string; en: string }> = {
+  phin: { vi: 'Pha Phin & Gu Việt', en: 'Vietnamese Phin' },
+  espresso: { vi: 'Espresso & Quầy Bar', en: 'Espresso & Bar' },
+  manual: { vi: 'Pour-Over & Pha Thủ Công', en: 'Manual & Cold Brew' },
+  science: { vi: 'Nước, Cỡ Xay & Bảo Quản', en: 'Water, Grind & Care' },
+  instant: { vi: 'Pha Nhanh & Tiện Lợi', en: 'Instant & Travel' },
+};
+
+function parseStringArrayJson(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 30);
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 30);
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapBrewingHandbookRow(row: any) {
+  let spec = { dose: '', water: '', temp: '', time: '', grindVi: '', grindEn: '' };
+  try {
+    const parsed = typeof row.spec_json === 'string' ? JSON.parse(row.spec_json) : row.spec_json;
+    if (parsed && typeof parsed === 'object') {
+      spec = {
+        dose: String(parsed.dose || ''),
+        water: String(parsed.water || ''),
+        temp: String(parsed.temp || ''),
+        time: String(parsed.time || ''),
+        grindVi: String(parsed.grindVi || ''),
+        grindEn: String(parsed.grindEn || parsed.grindVi || ''),
+      };
+    }
+  } catch {
+    // default empty spec
+  }
+  const topic = HANDBOOK_TOPIC_LABELS[row.topic] ? row.topic : 'phin';
+  return {
+    id: Number(row.id),
+    slug: String(row.slug || ''),
+    topic,
+    topicVi: String(row.topic_vi || HANDBOOK_TOPIC_LABELS[topic].vi),
+    topicEn: String(row.topic_en || HANDBOOK_TOPIC_LABELS[topic].en),
+    titleVi: String(row.title_vi || ''),
+    titleEn: String(row.title_en || row.title_vi || ''),
+    excerptVi: String(row.excerpt_vi || ''),
+    excerptEn: String(row.excerpt_en || row.excerpt_vi || ''),
+    readMinutes: Number(row.read_minutes || 4),
+    coverImageKey: String(row.cover_image_key || 'journal_phin_ritual'),
+    spec,
+    introVi: parseStringArrayJson(row.intro_vi_json),
+    introEn: parseStringArrayJson(row.intro_en_json),
+    stepsVi: parseStringArrayJson(row.steps_vi_json),
+    stepsEn: parseStringArrayJson(row.steps_en_json),
+    baristaTipVi: String(row.barista_tip_vi || ''),
+    baristaTipEn: String(row.barista_tip_en || row.barista_tip_vi || ''),
+    primaryProductSlug: String(row.primary_product_slug || 'roar-phin-heritage'),
+    secondaryProductSlug: String(row.secondary_product_slug || 'roar-dam-bold'),
+    upsellHeadlineVi: String(row.upsell_headline_vi || ''),
+    upsellHeadlineEn: String(row.upsell_headline_en || row.upsell_headline_vi || ''),
+    upsellReasonVi: String(row.upsell_reason_vi || ''),
+    upsellReasonEn: String(row.upsell_reason_en || row.upsell_reason_vi || ''),
+    sortOrder: Number(row.sort_order || 0),
+    cmsEdited: Number(row.cms_edited || 0),
+    published: Number(row.published ?? 1),
+    updatedAt: String(row.updated_at || ''),
+  };
+}
+
+app.get('/api/brewing-handbook', (_req, res) => {
+  const rows = db
+    .prepare('SELECT * FROM brewing_handbook_articles WHERE published = 1 ORDER BY sort_order ASC, id ASC')
+    .all() as any[];
+  res.json({ articles: rows.map(mapBrewingHandbookRow) });
+});
+
+app.get('/api/brewing-handbook/:slug', (req, res) => {
+  const row = db
+    .prepare('SELECT * FROM brewing_handbook_articles WHERE slug = ? AND published = 1')
+    .get(req.params.slug) as any;
+  if (!row) {
+    res.status(404).json({ error: 'Brewing guide not found' });
+    return;
+  }
+  res.json({ article: mapBrewingHandbookRow(row) });
+});
+
 // ---------- PROTECTED ADMIN CMS ROUTES ----------
 app.get('/api/admin/overview', requirePermission('overview'), (_req, res) => {
   const revRow = db
@@ -3621,7 +3728,26 @@ app.patch('/api/admin/orders/:id', requirePermission('orders'), (req: AuthedRequ
         quantity: number;
       }>;
       for (const item of orderItems) {
-        db.prepare('UPDATE products SET inventory = inventory + ? WHERE id = ?').run(item.quantity, item.product_id);
+        const prod = db.prepare('SELECT id, sku, name_vi, inventory FROM products WHERE id = ?').get(item.product_id) as any;
+        if (prod) {
+          const nextQty = Number(prod.inventory || 0) + item.quantity;
+          db.prepare('UPDATE products SET inventory = ? WHERE id = ?').run(nextQty, item.product_id);
+          db.prepare(`
+            INSERT INTO inventory_logs (product_id, sku, product_name, delta, previous_qty, new_qty, reason, note, actor_email)
+            VALUES (?, ?, ?, ?, ?, ?, 'order_cancel_restock', ?, ?)
+          `).run(
+            prod.id,
+            prod.sku,
+            prod.name_vi,
+            item.quantity,
+            Number(prod.inventory || 0),
+            nextQty,
+            `Hoàn kho tự động từ đơn ${order.order_number} (${nextStatus})`,
+            req.authUser?.email || 'admin'
+          );
+        } else {
+          db.prepare('UPDATE products SET inventory = inventory + ? WHERE id = ?').run(item.quantity, item.product_id);
+        }
       }
       db.prepare("DELETE FROM points_ledger WHERE order_id = ? AND entry_type = 'earn_pending'").run(order.id);
       db.prepare("UPDATE gift_voucher_dispatches SET status = 'cancelled' WHERE order_id = ? AND status IN ('pending_payment', 'active')").run(id);
@@ -3982,10 +4108,16 @@ app.post('/api/admin/combos', requirePermission('products', 'promotions'), (req:
   const badgeText = String(b.badge_text || `${promoCode || 'COMBO'} · -${discountPct}%`).trim().slice(0, 60);
   const sortOrder = Math.max(0, Math.round(Number(b.sort_order ?? 10)));
 
+  const seasonTag = String(b.season_tag || 'all').trim().slice(0, 40);
+  const startsAt = String(b.starts_at || '').trim().slice(0, 20);
+  const endsAt = String(b.ends_at || '').trim().slice(0, 20);
+  const giftNoteVi = String(b.gift_note_vi || '').trim().slice(0, 220);
+  const giftNoteEn = String(b.gift_note_en || '').trim().slice(0, 220);
+
   const result = db
     .prepare(`
-      INSERT INTO combos (slug, title_vi, title_en, desc_vi, desc_en, badge_text, discount_pct, promo_code, product_slugs_json, active, is_featured, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO combos (slug, title_vi, title_en, desc_vi, desc_en, badge_text, discount_pct, promo_code, product_slugs_json, active, is_featured, sort_order, season_tag, starts_at, ends_at, gift_note_vi, gift_note_en)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       finalSlug,
@@ -3999,11 +4131,16 @@ app.post('/api/admin/combos', requirePermission('products', 'promotions'), (req:
       JSON.stringify(productSlugs),
       b.active === false || b.active === 0 ? 0 : 1,
       b.is_featured === false || b.is_featured === 0 ? 0 : 1,
-      sortOrder
+      sortOrder,
+      seasonTag,
+      startsAt,
+      endsAt,
+      giftNoteVi,
+      giftNoteEn
     );
 
   const createdId = Number(result.lastInsertRowid);
-  logAudit(req.authUser!.userId, req.authUser!.email, 'CREATE_COMBO', 'combo', createdId, { slug: finalSlug, discountPct });
+  logAudit(req.authUser!.userId, req.authUser!.email, 'CREATE_COMBO', 'combo', createdId, { slug: finalSlug, discountPct, seasonTag });
   scheduleSnapshotSync(db);
   const row = db.prepare('SELECT * FROM combos WHERE id = ?').get(createdId);
   res.status(201).json({ ok: true, combo: mapComboRow(row) });
@@ -4035,15 +4172,26 @@ app.patch('/api/admin/combos/:id', requirePermission('products', 'promotions'), 
   const active = b.active !== undefined ? (b.active ? 1 : 0) : existing.active;
   const isFeatured = b.is_featured !== undefined ? (b.is_featured ? 1 : 0) : existing.is_featured;
   const sortOrder = b.sort_order !== undefined ? Math.max(0, Math.round(Number(b.sort_order))) : existing.sort_order;
+  const seasonTag = b.season_tag !== undefined ? String(b.season_tag).trim().slice(0, 40) : (existing.season_tag || 'all');
+  const startsAt = b.starts_at !== undefined ? String(b.starts_at).trim().slice(0, 20) : (existing.starts_at || '');
+  const endsAt = b.ends_at !== undefined ? String(b.ends_at).trim().slice(0, 20) : (existing.ends_at || '');
+  const giftNoteVi = b.gift_note_vi !== undefined ? String(b.gift_note_vi).trim().slice(0, 220) : (existing.gift_note_vi || '');
+  const giftNoteEn = b.gift_note_en !== undefined ? String(b.gift_note_en).trim().slice(0, 220) : (existing.gift_note_en || '');
 
   db.prepare(`
     UPDATE combos
     SET title_vi = ?, title_en = ?, desc_vi = ?, desc_en = ?, badge_text = ?, discount_pct = ?, promo_code = ?,
-        product_slugs_json = ?, active = ?, is_featured = ?, sort_order = ?, updated_at = datetime('now')
+        product_slugs_json = ?, active = ?, is_featured = ?, sort_order = ?,
+        season_tag = ?, starts_at = ?, ends_at = ?, gift_note_vi = ?, gift_note_en = ?,
+        updated_at = datetime('now')
     WHERE id = ?
-  `).run(titleVi, titleEn, descVi, descEn, badgeText, discountPct, promoCode, productSlugsJson, active, isFeatured, sortOrder, id);
+  `).run(
+    titleVi, titleEn, descVi, descEn, badgeText, discountPct, promoCode,
+    productSlugsJson, active, isFeatured, sortOrder,
+    seasonTag, startsAt, endsAt, giftNoteVi, giftNoteEn, id
+  );
 
-  logAudit(req.authUser!.userId, req.authUser!.email, 'UPDATE_COMBO', 'combo', id, { active, discountPct });
+  logAudit(req.authUser!.userId, req.authUser!.email, 'UPDATE_COMBO', 'combo', id, { active, discountPct, seasonTag });
   scheduleSnapshotSync(db);
   const row = db.prepare('SELECT * FROM combos WHERE id = ?').get(id);
   res.json({ ok: true, combo: mapComboRow(row) });
@@ -5918,6 +6066,187 @@ app.delete('/api/admin/journal/:id', requirePermission('posts'), (req: AuthedReq
   res.json({ ok: true });
 });
 
+// ---------- BREWING HANDBOOK CMS ROUTES (CẨM NANG PHA CHẾ) ----------
+app.get('/api/admin/brewing-handbook', requirePermission('posts'), (_req, res) => {
+  const rows = db
+    .prepare('SELECT * FROM brewing_handbook_articles ORDER BY sort_order ASC, id ASC')
+    .all() as any[];
+  res.json({ articles: rows.map(mapBrewingHandbookRow) });
+});
+
+app.post('/api/admin/brewing-handbook', requirePermission('posts'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const titleVi = String(b.titleVi || '').trim();
+  if (!titleVi) {
+    res.status(400).json({ error: 'Vui lòng nhập tiêu đề bài Cẩm nang pha chế.' });
+    return;
+  }
+  const topic = HANDBOOK_TOPIC_LABELS[b.topic] ? String(b.topic) : 'phin';
+  let slug = toSafeSlug(b.slug || titleVi);
+  if (!slug) slug = `cam-nang-${Date.now()}`;
+  const conflict = db.prepare('SELECT id FROM brewing_handbook_articles WHERE slug = ?').get(slug);
+  if (conflict) slug = `${slug}-${Date.now().toString().slice(-4)}`;
+
+  const safeCover = isSafeImageKeyOrUrl(b.coverImageKey) || 'journal_phin_ritual';
+  const maxOrderRow = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as m FROM brewing_handbook_articles').get() as {
+    m: number;
+  };
+  const specObj = {
+    dose: String(b.spec?.dose || '25g').slice(0, 80),
+    water: String(b.spec?.water || '90ml').slice(0, 100),
+    temp: String(b.spec?.temp || '92–95°C').slice(0, 60),
+    time: String(b.spec?.time || '4:30').slice(0, 60),
+    grindVi: String(b.spec?.grindVi || 'Vừa-thô').slice(0, 100),
+    grindEn: String(b.spec?.grindEn || b.spec?.grindVi || 'Medium-Coarse').slice(0, 100),
+  };
+  const introVi = parseStringArrayJson(b.introVi);
+  const introEn = parseStringArrayJson(b.introEn);
+  const stepsVi = parseStringArrayJson(b.stepsVi);
+  const stepsEn = parseStringArrayJson(b.stepsEn);
+
+  const info = db
+    .prepare(`
+      INSERT INTO brewing_handbook_articles (
+        slug, topic, topic_vi, topic_en, title_vi, title_en, excerpt_vi, excerpt_en,
+        read_minutes, cover_image_key, spec_json, intro_vi_json, intro_en_json,
+        steps_vi_json, steps_en_json, barista_tip_vi, barista_tip_en,
+        primary_product_slug, secondary_product_slug, upsell_headline_vi, upsell_headline_en,
+        upsell_reason_vi, upsell_reason_en, sort_order, cms_edited, published
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `)
+    .run(
+      slug,
+      topic,
+      HANDBOOK_TOPIC_LABELS[topic].vi,
+      HANDBOOK_TOPIC_LABELS[topic].en,
+      titleVi,
+      String(b.titleEn || titleVi).trim(),
+      String(b.excerptVi || ''),
+      String(b.excerptEn || b.excerptVi || ''),
+      Math.max(1, Math.min(45, Number(b.readMinutes || 4) || 4)),
+      safeCover,
+      JSON.stringify(specObj),
+      JSON.stringify(introVi),
+      JSON.stringify(introEn.length ? introEn : introVi),
+      JSON.stringify(stepsVi),
+      JSON.stringify(stepsEn.length ? stepsEn : stepsVi),
+      String(b.baristaTipVi || ''),
+      String(b.baristaTipEn || b.baristaTipVi || ''),
+      String(b.primaryProductSlug || 'roar-phin-heritage').trim().slice(0, 120),
+      String(b.secondaryProductSlug || 'roar-dam-bold').trim().slice(0, 120),
+      String(b.upsellHeadlineVi || ''),
+      String(b.upsellHeadlineEn || b.upsellHeadlineVi || ''),
+      String(b.upsellReasonVi || ''),
+      String(b.upsellReasonEn || b.upsellReasonVi || ''),
+      Number(b.sortOrder || maxOrderRow.m + 1),
+      b.published === 0 || b.published === false ? 0 : 1
+    );
+  const newId = Number(info.lastInsertRowid);
+  logAudit(req.authUser!.userId, req.authUser!.email, 'CREATE_HANDBOOK', 'brewing_handbook', newId, { slug });
+  scheduleSnapshotSync(db);
+  res.status(201).json({ ok: true, id: newId, slug });
+});
+
+app.patch('/api/admin/brewing-handbook/:id', requirePermission('posts'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM brewing_handbook_articles WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Không tìm thấy bài Cẩm nang pha chế' });
+    return;
+  }
+  const b = req.body || {};
+  const nextSlug = b.slug ? toSafeSlug(b.slug) || existing.slug : existing.slug;
+  if (nextSlug !== existing.slug) {
+    const conflict = db
+      .prepare('SELECT id FROM brewing_handbook_articles WHERE slug = ? AND id != ?')
+      .get(nextSlug, id);
+    if (conflict) {
+      res.status(409).json({ error: 'Đường dẫn (slug) này đã tồn tại ở bài cẩm nang khác.' });
+      return;
+    }
+  }
+  const nextTopic =
+    b.topic !== undefined && HANDBOOK_TOPIC_LABELS[b.topic] ? String(b.topic) : String(existing.topic || 'phin');
+  const nextCover =
+    b.coverImageKey !== undefined
+      ? isSafeImageKeyOrUrl(b.coverImageKey) || existing.cover_image_key
+      : existing.cover_image_key;
+  const nextSpecJson =
+    b.spec !== undefined
+      ? JSON.stringify({
+          dose: String(b.spec?.dose || '').slice(0, 80),
+          water: String(b.spec?.water || '').slice(0, 100),
+          temp: String(b.spec?.temp || '').slice(0, 60),
+          time: String(b.spec?.time || '').slice(0, 60),
+          grindVi: String(b.spec?.grindVi || '').slice(0, 100),
+          grindEn: String(b.spec?.grindEn || b.spec?.grindVi || '').slice(0, 100),
+        })
+      : existing.spec_json;
+
+  db.prepare(`
+    UPDATE brewing_handbook_articles SET
+      slug = ?, topic = ?, topic_vi = ?, topic_en = ?,
+      title_vi = ?, title_en = ?, excerpt_vi = ?, excerpt_en = ?,
+      read_minutes = ?, cover_image_key = ?, spec_json = ?,
+      intro_vi_json = ?, intro_en_json = ?, steps_vi_json = ?, steps_en_json = ?,
+      barista_tip_vi = ?, barista_tip_en = ?,
+      primary_product_slug = ?, secondary_product_slug = ?,
+      upsell_headline_vi = ?, upsell_headline_en = ?,
+      upsell_reason_vi = ?, upsell_reason_en = ?,
+      sort_order = ?, cms_edited = 1, published = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    nextSlug,
+    nextTopic,
+    HANDBOOK_TOPIC_LABELS[nextTopic].vi,
+    HANDBOOK_TOPIC_LABELS[nextTopic].en,
+    b.titleVi !== undefined ? String(b.titleVi).trim() : existing.title_vi,
+    b.titleEn !== undefined ? String(b.titleEn).trim() : existing.title_en,
+    b.excerptVi !== undefined ? String(b.excerptVi) : existing.excerpt_vi,
+    b.excerptEn !== undefined ? String(b.excerptEn) : existing.excerpt_en,
+    b.readMinutes !== undefined ? Math.max(1, Math.min(45, Number(b.readMinutes) || 4)) : existing.read_minutes,
+    nextCover,
+    nextSpecJson,
+    b.introVi !== undefined ? JSON.stringify(parseStringArrayJson(b.introVi)) : existing.intro_vi_json,
+    b.introEn !== undefined ? JSON.stringify(parseStringArrayJson(b.introEn)) : existing.intro_en_json,
+    b.stepsVi !== undefined ? JSON.stringify(parseStringArrayJson(b.stepsVi)) : existing.steps_vi_json,
+    b.stepsEn !== undefined ? JSON.stringify(parseStringArrayJson(b.stepsEn)) : existing.steps_en_json,
+    b.baristaTipVi !== undefined ? String(b.baristaTipVi) : existing.barista_tip_vi,
+    b.baristaTipEn !== undefined ? String(b.baristaTipEn) : existing.barista_tip_en,
+    b.primaryProductSlug !== undefined
+      ? String(b.primaryProductSlug).trim().slice(0, 120)
+      : existing.primary_product_slug,
+    b.secondaryProductSlug !== undefined
+      ? String(b.secondaryProductSlug).trim().slice(0, 120)
+      : existing.secondary_product_slug,
+    b.upsellHeadlineVi !== undefined ? String(b.upsellHeadlineVi) : existing.upsell_headline_vi,
+    b.upsellHeadlineEn !== undefined ? String(b.upsellHeadlineEn) : existing.upsell_headline_en,
+    b.upsellReasonVi !== undefined ? String(b.upsellReasonVi) : existing.upsell_reason_vi,
+    b.upsellReasonEn !== undefined ? String(b.upsellReasonEn) : existing.upsell_reason_en,
+    b.sortOrder !== undefined ? Number(b.sortOrder) || existing.sort_order : existing.sort_order,
+    b.published !== undefined ? (b.published ? 1 : 0) : existing.published,
+    id
+  );
+  logAudit(req.authUser!.userId, req.authUser!.email, 'UPDATE_HANDBOOK', 'brewing_handbook', id, { slug: nextSlug });
+  scheduleSnapshotSync(db);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/brewing-handbook/:id', requirePermission('posts'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM brewing_handbook_articles WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Không tìm thấy bài Cẩm nang pha chế' });
+    return;
+  }
+  db.prepare('DELETE FROM brewing_handbook_articles WHERE id = ?').run(id);
+  logAudit(req.authUser!.userId, req.authUser!.email, 'DELETE_HANDBOOK', 'brewing_handbook', id, {
+    slug: existing.slug,
+  });
+  scheduleSnapshotSync(db);
+  res.json({ ok: true });
+});
+
 // ---------- CMS SUBPAGES EDITOR (TRANG CON WEBSITE) ----------
 app.get('/api/admin/pages', requirePermission('pages'), (_req, res) => {
   const rows = db.prepare('SELECT * FROM cms_pages ORDER BY group_name ASC, slug ASC').all() as any[];
@@ -6406,6 +6735,1144 @@ app.post('/api/admin/exchange-rate/vietcombank/sync', requirePermission('product
   }
   scheduleSnapshotSync(db);
   res.json({ ok: true, rate, updatedProducts });
+});
+
+// ============================================================================
+// 1. BROADCAST & TARGETED PUSH NOTIFICATIONS CENTER
+// ============================================================================
+const ALLOWED_NOTIF_CATEGORIES = new Set(['order', 'promo', 'loyalty', 'system', 'event']);
+
+app.get('/api/admin/notifications/campaigns', requirePermission('customers'), (_req, res) => {
+  const campaigns = db
+    .prepare('SELECT * FROM notification_campaigns ORDER BY id DESC LIMIT 60')
+    .all() as any[];
+  const totalMembers = (db.prepare("SELECT COUNT(*) as c FROM users WHERE role != 'admin'").get() as { c: number }).c;
+  const pushOptInCount = (db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM push_subscriptions WHERE permission_status = 'granted'").get() as { c: number }).c;
+  const totalUnread = (db.prepare('SELECT COUNT(*) as c FROM user_notifications WHERE is_read = 0').get() as { c: number }).c;
+  const totalSentAllTime = (db.prepare('SELECT COUNT(*) as c FROM user_notifications').get() as { c: number }).c;
+
+  res.json({
+    campaigns: campaigns.map((c) => {
+      let targetMeta = {};
+      try {
+        targetMeta = JSON.parse(c.target_meta_json || '{}');
+      } catch {
+        targetMeta = {};
+      }
+      return { ...c, targetMeta };
+    }),
+    stats: {
+      totalMembers,
+      pushOptInCount,
+      totalUnread,
+      totalSentAllTime,
+    },
+  });
+});
+
+app.post('/api/admin/notifications/broadcast', requirePermission('customers'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const titleVi = String(b.titleVi || '').trim().slice(0, 160);
+  const titleEn = String(b.titleEn || titleVi).trim().slice(0, 160);
+  const messageVi = String(b.messageVi || '').trim().slice(0, 1200);
+  const messageEn = String(b.messageEn || messageVi).trim().slice(0, 1200);
+  const category = ALLOWED_NOTIF_CATEGORIES.has(String(b.category || ''))
+    ? (String(b.category) as 'order' | 'promo' | 'loyalty' | 'system' | 'event')
+    : 'promo';
+  const rawLink = String(b.linkUrl || '/promotions').trim();
+  const linkUrl = rawLink.startsWith('/') ? rawLink.slice(0, 200) : '/promotions';
+  const targetMode = ['all', 'selected', 'tier', 'b2b', 'inactive'].includes(String(b.targetMode || ''))
+    ? String(b.targetMode)
+    : 'all';
+  const pushEnabled = b.pushEnabled !== false ? 1 : 0;
+
+  if (!titleVi || !messageVi) {
+    res.status(400).json({ error: 'Vui lòng nhập đầy đủ tiêu đề và nội dung thông báo.' });
+    return;
+  }
+
+  let recipientRows: Array<{ id: number }> = [];
+  const targetMeta: Record<string, any> = {};
+
+  if (targetMode === 'all') {
+    recipientRows = db.prepare("SELECT id FROM users WHERE role != 'admin'").all() as Array<{ id: number }>;
+  } else if (targetMode === 'selected') {
+    const ids = Array.isArray(b.userIds)
+      ? Array.from(new Set(b.userIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)))
+      : [];
+    if (ids.length === 0) {
+      res.status(400).json({ error: 'Vui lòng chọn ít nhất 1 thành viên nhận thông báo.' });
+      return;
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    recipientRows = db.prepare(`SELECT id FROM users WHERE id IN (${placeholders})`).all(...ids) as Array<{ id: number }>;
+    targetMeta.selectedCount = recipientRows.length;
+    targetMeta.userIds = ids.slice(0, 50);
+  } else if (targetMode === 'tier') {
+    const tierName = normalizeMembershipTierName(String(b.tier || 'ROAR Member'));
+    recipientRows = db.prepare("SELECT id FROM users WHERE role != 'admin' AND tier = ?").all(tierName) as Array<{ id: number }>;
+    targetMeta.tier = tierName;
+  } else if (targetMode === 'b2b') {
+    recipientRows = db.prepare("SELECT id FROM users WHERE role = 'b2b_partner' OR b2b_verified = 1").all() as Array<{ id: number }>;
+  } else if (targetMode === 'inactive') {
+    const days = Math.max(7, Math.min(365, Math.round(Number(b.inactiveDays || 30))));
+    recipientRows = db
+      .prepare(`
+        SELECT u.id FROM users u
+        WHERE u.role != 'admin'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o
+            WHERE (o.user_id = u.id OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(u.email)))
+              AND o.created_at >= datetime('now', '-' || ? || ' days')
+          )
+      `)
+      .all(days) as Array<{ id: number }>;
+    targetMeta.inactiveDays = days;
+  }
+
+  const sendTx = db.transaction(() => {
+    for (const r of recipientRows) {
+      createUserNotification(r.id, {
+        titleVi,
+        titleEn,
+        messageVi,
+        messageEn,
+        category,
+        linkUrl,
+      });
+    }
+    const campRes = db
+      .prepare(`
+        INSERT INTO notification_campaigns (
+          title_vi, title_en, message_vi, message_en, category, target_mode, target_meta_json,
+          link_url, push_enabled, recipient_count, created_by_email
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        titleVi,
+        titleEn,
+        messageVi,
+        messageEn,
+        category,
+        targetMode,
+        JSON.stringify(targetMeta),
+        linkUrl,
+        pushEnabled,
+        recipientRows.length,
+        req.authUser!.email
+      );
+    return Number(campRes.lastInsertRowid);
+  });
+
+  const campaignId = sendTx();
+  logAudit(req.authUser!.userId, req.authUser!.email, 'BROADCAST_NOTIFICATION', 'notification_campaign', campaignId, {
+    category,
+    targetMode,
+    recipientCount: recipientRows.length,
+    pushEnabled: Boolean(pushEnabled),
+  });
+
+  res.status(201).json({
+    ok: true,
+    campaignId,
+    sentCount: recipientRows.length,
+  });
+});
+
+app.get('/api/account/notifications/poll', requireAuth, (req: AuthedRequest, res) => {
+  const sinceId = Math.max(0, Math.floor(Number(req.query.sinceId || 0)));
+  const unreadCount = (
+    db.prepare('SELECT COUNT(*) as c FROM user_notifications WHERE user_id = ? AND is_read = 0').get(req.authUser!.userId) as { c: number }
+  ).c;
+  const latest = db
+    .prepare(`
+      SELECT id, title_vi, title_en, message_vi, message_en, category, link_url, is_read, created_at
+      FROM user_notifications
+      WHERE user_id = ? AND id > ?
+      ORDER BY id DESC
+      LIMIT 10
+    `)
+    .all(req.authUser!.userId, sinceId);
+  const maxRow = db
+    .prepare('SELECT COALESCE(MAX(id), 0) as maxId FROM user_notifications WHERE user_id = ?')
+    .get(req.authUser!.userId) as { maxId: number };
+  res.json({ unreadCount, latest, latestId: maxRow.maxId });
+});
+
+app.post('/api/account/push-preference', requireAuth, (req: AuthedRequest, res) => {
+  const permissionStatus = ['granted', 'denied', 'default'].includes(String(req.body?.permissionStatus || ''))
+    ? String(req.body.permissionStatus)
+    : 'granted';
+  const deviceLabel = String(req.body?.deviceLabel || 'Web Browser').trim().slice(0, 100);
+  const rawDeviceKey = String(req.body?.deviceKey || `${req.authUser!.userId}:${req.headers['user-agent'] || 'browser'}`);
+  const endpointHash = crypto.createHash('sha256').update(`${req.authUser!.userId}:${rawDeviceKey}`).digest('hex').slice(0, 48);
+
+  db.prepare(`
+    INSERT INTO push_subscriptions (user_id, device_label, permission_status, endpoint_hash, last_seen_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(endpoint_hash) DO UPDATE SET
+      device_label = excluded.device_label,
+      permission_status = excluded.permission_status,
+      last_seen_at = datetime('now')
+  `).run(req.authUser!.userId, deviceLabel, permissionStatus, endpointHash);
+
+  res.json({ ok: true, permissionStatus });
+});
+
+// ============================================================================
+// 2. WEBAUTHN BIOMETRIC AUTHENTICATION (FINGERPRINT / FACE ID PASSKEYS)
+// ============================================================================
+function base64UrlToBuffer(val: string): Buffer {
+  const padded = val.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((val.length + 3) % 4);
+  return Buffer.from(padded, 'base64');
+}
+
+function bufferToBase64Url(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function resolveWebAuthnRpId(req: express.Request): string {
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim();
+  return rawHost.split(':')[0].toLowerCase() || 'localhost';
+}
+
+app.get('/api/auth/webauthn/credentials', requireAuth, (req: AuthedRequest, res) => {
+  const rows = db
+    .prepare('SELECT id, credential_id, device_name, alg, sign_count, last_used_at, created_at FROM webauthn_credentials WHERE user_id = ? ORDER BY id DESC')
+    .all(req.authUser!.userId);
+  res.json({ credentials: rows });
+});
+
+app.delete('/api/auth/webauthn/credentials/:id', requireAuth, (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const result = db
+    .prepare('DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ?')
+    .run(id, req.authUser!.userId);
+  if (result.changes === 0) {
+    res.status(404).json({ error: 'Không tìm thấy khóa sinh trắc học này.' });
+    return;
+  }
+  logAudit(req.authUser!.userId, req.authUser!.email, 'REVOKE_BIOMETRIC_PASSKEY', 'webauthn_credentials', id, {});
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/webauthn/register/options', requireAuth, (req: AuthedRequest, res) => {
+  const user = db.prepare('SELECT id, email, full_name FROM users WHERE id = ?').get(req.authUser!.userId) as any;
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  const challenge = bufferToBase64Url(crypto.randomBytes(32));
+  const expiresAt = Date.now() + 5 * 60 * 1000;
+  db.prepare('DELETE FROM webauthn_challenges WHERE expires_at < ?').run(Date.now());
+  db.prepare('INSERT INTO webauthn_challenges (challenge, user_id, email, flow, expires_at, used) VALUES (?, ?, ?, ?, ?, 0)').run(
+    challenge,
+    user.id,
+    user.email,
+    'register',
+    expiresAt
+  );
+
+  const existing = db
+    .prepare('SELECT credential_id FROM webauthn_credentials WHERE user_id = ?')
+    .all(user.id) as Array<{ credential_id: string }>;
+
+  const rpId = resolveWebAuthnRpId(req);
+  res.json({
+    challenge,
+    rp: { name: 'ROAR COFFEE®', id: rpId },
+    user: {
+      id: bufferToBase64Url(Buffer.from(`roar-user-${user.id}`, 'utf8')),
+      name: user.email,
+      displayName: user.full_name || user.email,
+    },
+    pubKeyCredParams: [
+      { type: 'public-key', alg: -7 }, // ES256 (ECDSA P-256)
+      { type: 'public-key', alg: -257 }, // RS256
+    ],
+    timeout: 60000,
+    attestation: 'none',
+    authenticatorSelection: {
+      authenticatorAttachment: 'platform',
+      residentKey: 'preferred',
+      userVerification: 'required',
+    },
+    excludeCredentials: existing.map((c) => ({ type: 'public-key', id: c.credential_id })),
+  });
+});
+
+app.post('/api/auth/webauthn/register/verify', requireAuth, (req: AuthedRequest, res) => {
+  const { credentialId, clientDataJSON, authenticatorData, publicKeySpki, alg, deviceName, transports } = req.body || {};
+  if (!credentialId || !clientDataJSON || !authenticatorData || !publicKeySpki) {
+    res.status(400).json({ error: 'Dữ liệu xác thực sinh trắc học không đầy đủ.' });
+    return;
+  }
+
+  let clientData: any;
+  try {
+    clientData = JSON.parse(base64UrlToBuffer(String(clientDataJSON)).toString('utf8'));
+  } catch {
+    res.status(400).json({ error: 'clientDataJSON không hợp lệ.' });
+    return;
+  }
+
+  if (clientData.type !== 'webauthn.create' || !clientData.challenge) {
+    res.status(400).json({ error: 'Loại yêu cầu WebAuthn không hợp lệ.' });
+    return;
+  }
+
+  const chRow = db
+    .prepare("SELECT * FROM webauthn_challenges WHERE challenge = ? AND flow = 'register' AND used = 0")
+    .get(String(clientData.challenge)) as any;
+  if (!chRow || Number(chRow.expires_at) < Date.now() || Number(chRow.user_id) !== req.authUser!.userId) {
+    res.status(400).json({ error: 'Phiên đăng ký sinh trắc học đã hết hạn. Vui lòng thử lại.' });
+    return;
+  }
+
+  // Validate rpIdHash & SPKI public key parses cleanly
+  const authDataBuf = base64UrlToBuffer(String(authenticatorData));
+  if (authDataBuf.length < 37) {
+    res.status(400).json({ error: 'authenticatorData không hợp lệ.' });
+    return;
+  }
+  const rpId = resolveWebAuthnRpId(req);
+  const expectedRpHash = crypto.createHash('sha256').update(rpId).digest();
+  const actualRpHash = authDataBuf.subarray(0, 32);
+  if (!crypto.timingSafeEqual(expectedRpHash, actualRpHash)) {
+    res.status(400).json({ error: 'Tên miền xác thực sinh trắc học không khớp.' });
+    return;
+  }
+
+  try {
+    const spkiBuf = base64UrlToBuffer(String(publicKeySpki));
+    crypto.createPublicKey({ key: spkiBuf, format: 'der', type: 'spki' });
+  } catch {
+    res.status(400).json({ error: 'Khóa công khai sinh trắc học không hợp lệ.' });
+    return;
+  }
+
+  const signCount = authDataBuf.readUInt32BE(33);
+  const cleanName = String(deviceName || 'Thiết bị Vân tay / Face ID').trim().slice(0, 80);
+  const cleanTransports = Array.isArray(transports) ? transports.map((x: any) => String(x)).slice(0, 6) : ['internal'];
+
+  db.prepare('UPDATE webauthn_challenges SET used = 1 WHERE challenge = ?').run(chRow.challenge);
+  db.prepare(`
+    INSERT INTO webauthn_credentials (user_id, credential_id, public_key_spki, alg, sign_count, device_name, transports_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(credential_id) DO UPDATE SET
+      public_key_spki = excluded.public_key_spki,
+      device_name = excluded.device_name,
+      sign_count = excluded.sign_count
+  `).run(
+    req.authUser!.userId,
+    String(credentialId),
+    String(publicKeySpki),
+    Number(alg || -7),
+    signCount,
+    cleanName,
+    JSON.stringify(cleanTransports)
+  );
+
+  logAudit(req.authUser!.userId, req.authUser!.email, 'REGISTER_BIOMETRIC_PASSKEY', 'webauthn_credentials', String(credentialId).slice(0, 24), {
+    deviceName: cleanName,
+  });
+
+  createUserNotification(req.authUser!.userId, {
+    titleVi: `Đã bật đăng nhập Vân tay / Face ID (${cleanName})`,
+    titleEn: `Biometric Sign-In Enabled (${cleanName})`,
+    messageVi: 'Từ nay bạn có thể đăng nhập ROAR COFFEE chỉ với 1 chạm bằng vân tay hoặc nhận diện khuôn mặt an toàn chuẩn FIDO2.',
+    messageEn: 'You can now sign in to ROAR COFFEE in one tap with hardware-backed Fingerprint or Face ID.',
+    category: 'system',
+    linkUrl: '/account?tab=profile',
+  });
+
+  res.status(201).json({ ok: true });
+});
+
+app.post('/api/auth/webauthn/login/options', (req, res) => {
+  const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+  const challenge = bufferToBase64Url(crypto.randomBytes(32));
+  const expiresAt = Date.now() + 5 * 60 * 1000;
+  db.prepare('DELETE FROM webauthn_challenges WHERE expires_at < ?').run(Date.now());
+
+  let userRow: any = null;
+  let allowCredentials: Array<{ type: 'public-key'; id: string }> = [];
+
+  if (rawEmail) {
+    userRow = db.prepare('SELECT id, email FROM users WHERE email = ?').get(rawEmail);
+    if (userRow) {
+      const creds = db
+        .prepare('SELECT credential_id FROM webauthn_credentials WHERE user_id = ?')
+        .all(userRow.id) as Array<{ credential_id: string }>;
+      allowCredentials = creds.map((c) => ({ type: 'public-key', id: c.credential_id }));
+      if (allowCredentials.length === 0) {
+        res.status(404).json({
+          error: 'Tài khoản này chưa đăng ký Vân tay / Khuôn mặt. Vui lòng đăng nhập bằng mật khẩu rồi bật Sinh trắc học tại mục Hồ sơ & Bảo mật.',
+        });
+        return;
+      }
+    }
+  } else {
+    const anyCreds = db.prepare('SELECT credential_id FROM webauthn_credentials ORDER BY id DESC LIMIT 20').all() as Array<{ credential_id: string }>;
+    allowCredentials = anyCreds.map((c) => ({ type: 'public-key', id: c.credential_id }));
+  }
+
+  db.prepare('INSERT INTO webauthn_challenges (challenge, user_id, email, flow, expires_at, used) VALUES (?, ?, ?, ?, ?, 0)').run(
+    challenge,
+    userRow?.id || null,
+    rawEmail,
+    'login',
+    expiresAt
+  );
+
+  res.json({
+    challenge,
+    rpId: resolveWebAuthnRpId(req),
+    timeout: 60000,
+    userVerification: 'required',
+    allowCredentials,
+  });
+});
+
+app.post('/api/auth/webauthn/login/verify', (req, res) => {
+  const { credentialId, clientDataJSON, authenticatorData, signature } = req.body || {};
+  if (!credentialId || !clientDataJSON || !authenticatorData || !signature) {
+    res.status(400).json({ error: 'Thiếu dữ liệu xác thực sinh trắc học.' });
+    return;
+  }
+
+  const cred = db.prepare('SELECT * FROM webauthn_credentials WHERE credential_id = ?').get(String(credentialId)) as any;
+  if (!cred) {
+    res.status(401).json({ error: 'Thiết bị sinh trắc học chưa được đăng ký trên hệ thống.' });
+    return;
+  }
+
+  let clientData: any;
+  const clientDataBuf = base64UrlToBuffer(String(clientDataJSON));
+  try {
+    clientData = JSON.parse(clientDataBuf.toString('utf8'));
+  } catch {
+    res.status(400).json({ error: 'clientDataJSON không hợp lệ.' });
+    return;
+  }
+
+  if (clientData.type !== 'webauthn.get' || !clientData.challenge) {
+    res.status(401).json({ error: 'Yêu cầu xác thực sinh trắc học không hợp lệ.' });
+    return;
+  }
+
+  const chRow = db
+    .prepare("SELECT * FROM webauthn_challenges WHERE challenge = ? AND flow = 'login' AND used = 0")
+    .get(String(clientData.challenge)) as any;
+  if (!chRow || Number(chRow.expires_at) < Date.now()) {
+    res.status(401).json({ error: 'Phiên xác thực sinh trắc học đã hết hạn. Vui lòng thử lại.' });
+    return;
+  }
+
+  const authDataBuf = base64UrlToBuffer(String(authenticatorData));
+  if (authDataBuf.length < 37) {
+    res.status(401).json({ error: 'Dữ liệu thiết bị không hợp lệ.' });
+    return;
+  }
+
+  const rpId = resolveWebAuthnRpId(req);
+  const expectedRpHash = crypto.createHash('sha256').update(rpId).digest();
+  const actualRpHash = authDataBuf.subarray(0, 32);
+  if (!crypto.timingSafeEqual(expectedRpHash, actualRpHash)) {
+    res.status(401).json({ error: 'Tên miền xác thực không khớp.' });
+    return;
+  }
+
+  const flags = authDataBuf[32];
+  const userPresent = (flags & 0x01) !== 0;
+  if (!userPresent) {
+    res.status(401).json({ error: 'Không xác nhận được thao tác người dùng trên cảm biến.' });
+    return;
+  }
+
+  const nextSignCount = authDataBuf.readUInt32BE(33);
+  if (Number(cred.sign_count) > 0 && nextSignCount > 0 && nextSignCount <= Number(cred.sign_count)) {
+    res.status(401).json({ error: 'Phát hiện bất thường bộ đếm bảo mật (Replay Protection).' });
+    return;
+  }
+
+  const clientDataHash = crypto.createHash('sha256').update(clientDataBuf).digest();
+  const signedPayload = Buffer.concat([authDataBuf, clientDataHash]);
+  const sigBuf = base64UrlToBuffer(String(signature));
+
+  let verified = false;
+  try {
+    const pubKey = crypto.createPublicKey({
+      key: base64UrlToBuffer(String(cred.public_key_spki)),
+      format: 'der',
+      type: 'spki',
+    });
+    verified = crypto.verify('sha256', signedPayload, pubKey, sigBuf);
+  } catch {
+    verified = false;
+  }
+
+  if (!verified) {
+    res.status(401).json({ error: 'Chữ ký sinh trắc học không hợp lệ.' });
+    return;
+  }
+
+  db.prepare('UPDATE webauthn_challenges SET used = 1 WHERE challenge = ?').run(chRow.challenge);
+  db.prepare("UPDATE webauthn_credentials SET sign_count = ?, last_used_at = datetime('now') WHERE id = ?").run(
+    nextSignCount,
+    cred.id
+  );
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(cred.user_id) as any;
+  if (!user) {
+    res.status(401).json({ error: 'Tài khoản không tồn tại.' });
+    return;
+  }
+
+  const syncedTier = syncUserTierInDb(user.id);
+  const token = signSessionToken({ userId: user.id, email: user.email, role: user.role });
+  setSessionCookie(req, res, token);
+  const rbac = resolveEffectiveAdminPermissions(user);
+
+  res.json({
+    token,
+    biometricDevice: cred.device_name,
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      phone: user.phone,
+      role: user.role,
+      adminRole: rbac.adminRole,
+      adminPermissions: rbac.adminPermissions,
+      memberCode: user.member_code,
+      tier: syncedTier,
+      emailVerified: Boolean(user.email_verified),
+      totpEnabled: Boolean(user.totp_enabled),
+      companyName: user.company_name,
+      b2bVerified: Boolean(user.b2b_verified),
+    },
+  });
+});
+
+// ============================================================================
+// 3. PERSONALIZED TASTE PROFILE & SMART RECOMMENDATION ENGINE
+// ============================================================================
+app.get('/api/account/preferences', requireAuth, (req: AuthedRequest, res) => {
+  const row = db.prepare('SELECT * FROM user_taste_preferences WHERE user_id = ?').get(req.authUser!.userId) as any;
+  if (!row) {
+    res.json({
+      preferences: {
+        brewMethods: ['phin'],
+        roastLevel: 'medium_dark',
+        flavorNotes: ['chocolate', 'bold'],
+        caffeineLevel: 'balanced',
+        favoriteCategories: ['roasted'],
+        budgetRange: 'standard',
+      },
+    });
+    return;
+  }
+  const safeArr = (s: string) => {
+    try {
+      const p = JSON.parse(s || '[]');
+      return Array.isArray(p) ? p : [];
+    } catch {
+      return [];
+    }
+  };
+  res.json({
+    preferences: {
+      brewMethods: safeArr(row.brew_methods_json),
+      roastLevel: row.roast_level || 'medium_dark',
+      flavorNotes: safeArr(row.flavor_notes_json),
+      caffeineLevel: row.caffeine_level || 'balanced',
+      favoriteCategories: safeArr(row.favorite_categories_json),
+      budgetRange: row.budget_range || 'standard',
+      updatedAt: row.updated_at,
+    },
+  });
+});
+
+app.put('/api/account/preferences', requireAuth, (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const brewMethods = Array.isArray(b.brewMethods) ? b.brewMethods.map((x: any) => String(x).slice(0, 30)).slice(0, 6) : [];
+  const flavorNotes = Array.isArray(b.flavorNotes) ? b.flavorNotes.map((x: any) => String(x).slice(0, 30)).slice(0, 6) : [];
+  const favoriteCategories = Array.isArray(b.favoriteCategories) ? b.favoriteCategories.map((x: any) => String(x).slice(0, 30)).slice(0, 6) : [];
+  const roastLevel = ['light', 'medium', 'medium_dark', 'dark'].includes(String(b.roastLevel)) ? String(b.roastLevel) : 'medium_dark';
+  const caffeineLevel = ['low', 'balanced', 'high'].includes(String(b.caffeineLevel)) ? String(b.caffeineLevel) : 'balanced';
+  const budgetRange = ['economy', 'standard', 'premium'].includes(String(b.budgetRange)) ? String(b.budgetRange) : 'standard';
+
+  db.prepare(`
+    INSERT INTO user_taste_preferences (user_id, brew_methods_json, roast_level, flavor_notes_json, caffeine_level, favorite_categories_json, budget_range, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      brew_methods_json = excluded.brew_methods_json,
+      roast_level = excluded.roast_level,
+      flavor_notes_json = excluded.flavor_notes_json,
+      caffeine_level = excluded.caffeine_level,
+      favorite_categories_json = excluded.favorite_categories_json,
+      budget_range = excluded.budget_range,
+      updated_at = datetime('now')
+  `).run(
+    req.authUser!.userId,
+    JSON.stringify(brewMethods),
+    roastLevel,
+    JSON.stringify(flavorNotes),
+    caffeineLevel,
+    JSON.stringify(favoriteCategories),
+    budgetRange
+  );
+
+  res.json({ ok: true });
+});
+
+app.get('/api/recommendations/personalized', (req: AuthedRequest, res) => {
+  const userId = req.authUser?.userId || null;
+  const queryBrew = String(req.query.brew || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const queryRoast = String(req.query.roast || '').trim().toLowerCase();
+  const queryFlavors = String(req.query.flavor || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const recentSlugs = String(req.query.recentSlugs || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10);
+
+  let prefBrew = queryBrew;
+  let prefRoast = queryRoast;
+  let prefFlavors = queryFlavors;
+  const purchasedCounts = new Map<number, { qty: number; lastDate: string; nameVi: string; nameEn: string }>();
+  const purchasedCategories = new Set<string>();
+
+  if (userId) {
+    const prefRow = db.prepare('SELECT * FROM user_taste_preferences WHERE user_id = ?').get(userId) as any;
+    if (prefRow) {
+      if (prefBrew.length === 0) {
+        try { prefBrew = JSON.parse(prefRow.brew_methods_json || '[]'); } catch {}
+      }
+      if (!prefRoast) prefRoast = String(prefRow.roast_level || '');
+      if (prefFlavors.length === 0) {
+        try { prefFlavors = JSON.parse(prefRow.flavor_notes_json || '[]'); } catch {}
+      }
+    }
+
+    const orderRows = db
+      .prepare(`
+        SELECT oi.product_id, oi.quantity, o.created_at, p.category, p.name_vi, p.name_en
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        JOIN products p ON p.id = oi.product_id
+        WHERE (o.user_id = ? OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(?)))
+          AND o.order_status != 'Cancelled'
+        ORDER BY o.created_at DESC
+        LIMIT 60
+      `)
+      .all(userId, req.authUser?.email || '') as any[];
+
+    for (const r of orderRows) {
+      purchasedCategories.add(String(r.category || ''));
+      const prev = purchasedCounts.get(Number(r.product_id));
+      if (!prev) {
+        purchasedCounts.set(Number(r.product_id), {
+          qty: Number(r.quantity || 1),
+          lastDate: String(r.created_at || ''),
+          nameVi: r.name_vi,
+          nameEn: r.name_en,
+        });
+      } else {
+        prev.qty += Number(r.quantity || 1);
+      }
+    }
+  }
+
+  const allProducts = db
+    .prepare("SELECT * FROM products WHERE status = 'active' AND category != 'green_bean' ORDER BY featured DESC, id ASC")
+    .all() as any[];
+
+  const mapped = allProducts
+    .filter((p) => !String(p.slug || '').startsWith('gift-voucher-'))
+    .map((p) => ({
+      ...p,
+      barcode: p.barcode || '',
+      blend_summary_vi: p.blend_public ? p.blend_summary_vi : 'Tỷ lệ phối trộn bảo mật nội bộ',
+      blend_summary_en: p.blend_public ? p.blend_summary_en : 'Confidential proprietary blend ratio',
+      brewing_methods: JSON.parse(p.brewing_methods_json || '[]'),
+      variants: JSON.parse(p.variants_json || '[]'),
+      pricing_tiers: JSON.parse(p.pricing_tiers_json || '[]'),
+      packaging_options: JSON.parse(p.packaging_options_json || '[]'),
+      gallery_images: JSON.parse(p.gallery_images_json || '[]'),
+    }));
+
+  const scored = mapped.map((p) => {
+    let score = 68;
+    const reasonsVi: string[] = [];
+    const reasonsEn: string[] = [];
+    const haystack = [
+      p.name_vi,
+      p.name_en,
+      p.slug,
+      p.category,
+      p.coffee_type,
+      p.roast_profile_vi,
+      p.roast_profile_en,
+      p.tasting_notes_vi,
+      p.tasting_notes_en,
+      ...(p.brewing_methods || []),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    const prevPurchase = purchasedCounts.get(p.id);
+    if (prevPurchase) {
+      score += 18;
+      reasonsVi.push(`Đã đặt ${prevPurchase.qty} lần — đặt lại nhanh`);
+      reasonsEn.push(`Ordered ${prevPurchase.qty}× previously — quick reorder`);
+    } else if (purchasedCategories.has(p.category)) {
+      score += 10;
+      reasonsVi.push('Cùng dòng sản phẩm bạn từng yêu thích');
+      reasonsEn.push('Matches categories from your past orders');
+    }
+
+    if (recentSlugs.includes(p.slug)) {
+      score += 9;
+      reasonsVi.push('Bạn vừa xem gần đây');
+      reasonsEn.push('Based on your recent browsing');
+    }
+
+    for (const b of prefBrew) {
+      if (
+        (b === 'phin' && (haystack.includes('phin') || haystack.includes('robusta') || haystack.includes('dam'))) ||
+        (b === 'espresso' && (haystack.includes('espresso') || haystack.includes('culi') || haystack.includes('blend'))) ||
+        (b === 'pourover' && (haystack.includes('arabica') || haystack.includes('pour') || haystack.includes('v60') || haystack.includes('reserve'))) ||
+        (b === 'instant' && (p.category === 'instant' || haystack.includes('instant') || haystack.includes('hòa tan'))) ||
+        (b === 'coldbrew' && (haystack.includes('cold brew') || haystack.includes('arabica') || haystack.includes('reserve')))
+      ) {
+        score += 12;
+        const brewLabelVi =
+          b === 'phin' ? 'Pha Phin' : b === 'espresso' ? 'Espresso máy' : b === 'pourover' ? 'Pour-Over' : b === 'instant' ? 'Hòa tan tiện lợi' : 'Cold Brew';
+        const brewLabelEn =
+          b === 'phin' ? 'Phin Brew' : b === 'espresso' ? 'Espresso' : b === 'pourover' ? 'Pour-Over' : b === 'instant' ? 'Instant Convenience' : 'Cold Brew';
+        reasonsVi.push(`Chuẩn gu ${brewLabelVi}`);
+        reasonsEn.push(`Tailored for ${brewLabelEn}`);
+        break;
+      }
+    }
+
+    if (prefRoast) {
+      if (
+        (prefRoast === 'dark' && (haystack.includes('đậm') || haystack.includes('bold') || haystack.includes('dark') || haystack.includes('robusta'))) ||
+        (prefRoast === 'medium_dark' && (haystack.includes('vừa') || haystack.includes('espresso') || haystack.includes('phin') || haystack.includes('medium'))) ||
+        (prefRoast === 'light' && (haystack.includes('arabica') || haystack.includes('reserve') || haystack.includes('nhẹ') || haystack.includes('floral')))
+      ) {
+        score += 8;
+        reasonsVi.push('Đúng độ rang bạn chọn');
+        reasonsEn.push('Matches your roast preference');
+      }
+    }
+
+    for (const fl of prefFlavors) {
+      if (
+        (fl === 'bold' && (haystack.includes('đậm') || haystack.includes('bold') || haystack.includes('robusta') || haystack.includes('culi'))) ||
+        (fl === 'chocolate' && (haystack.includes('cacao') || haystack.includes('sô-cô-la') || haystack.includes('chocolate') || haystack.includes('espresso') || haystack.includes('phin'))) ||
+        (fl === 'fruity' && (haystack.includes('arabica') || haystack.includes('chua') || haystack.includes('trái cây') || haystack.includes('floral') || haystack.includes('reserve'))) ||
+        (fl === 'creamy' && (haystack.includes('hòa tan') || haystack.includes('instant') || haystack.includes('gold') || haystack.includes('silver') || haystack.includes('sữa')))
+      ) {
+        score += 7;
+        break;
+      }
+    }
+
+    if (p.featured) score += 3;
+    const finalScore = Math.min(99, Math.max(72, score));
+
+    return {
+      product: p,
+      matchScore: finalScore,
+      isRepurchase: Boolean(prevPurchase),
+      reasonVi: reasonsVi[0] || 'Tuyển chọn bán chạy phù hợp khẩu vị Việt Nam',
+      reasonEn: reasonsEn[0] || 'Top-rated ROAR pick tailored to your profile',
+    };
+  });
+
+  scored.sort((a, b) => b.matchScore - a.matchScore);
+  const recommendations = scored.slice(0, 6);
+  const repurchaseItems = scored.filter((s) => s.isRepurchase).slice(0, 4);
+
+  const combosRows = db.prepare('SELECT * FROM combos WHERE active = 1 ORDER BY is_featured DESC, sort_order ASC').all() as any[];
+  const personalizedCombos = combosRows.map(mapComboRow).slice(0, 4);
+
+  res.json({
+    personalizedForUser: Boolean(userId),
+    hasOrderHistory: purchasedCounts.size > 0,
+    preferences: { brewMethods: prefBrew, roastLevel: prefRoast || 'medium_dark', flavorNotes: prefFlavors },
+    recommendations,
+    repurchaseItems,
+    personalizedCombos,
+  });
+});
+
+// ============================================================================
+// 4. ADMIN INVENTORY MANAGEMENT & STOCK LOGS
+// ============================================================================
+app.get('/api/admin/inventory/overview', requirePermission('products'), (_req, res) => {
+  const products = db
+    .prepare('SELECT id, slug, sku, name_vi, name_en, category, price_vnd, inventory, low_stock_threshold, status, image_key FROM products ORDER BY inventory ASC, id ASC')
+    .all() as any[];
+
+  const velocityRows = db
+    .prepare(`
+      SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as sold30d
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.order_status != 'Cancelled'
+        AND o.created_at >= datetime('now', '-30 days')
+      GROUP BY oi.product_id
+    `)
+    .all() as Array<{ product_id: number; sold30d: number }>;
+  const velocityMap = new Map<number, number>();
+  for (const v of velocityRows) velocityMap.set(Number(v.product_id), Number(v.sold30d || 0));
+
+  let totalUnits = 0;
+  let totalStockValueVnd = 0;
+  let lowStockCount = 0;
+  let outOfStockCount = 0;
+
+  const items = products.map((p) => {
+    const qty = Number(p.inventory || 0);
+    const threshold = Number(p.low_stock_threshold || 15);
+    const sold30d = velocityMap.get(Number(p.id)) || 0;
+    const dailyRate = sold30d / 30;
+    const daysOfSupply = dailyRate > 0 ? Math.round(qty / dailyRate) : null;
+
+    totalUnits += qty;
+    totalStockValueVnd += qty * Number(p.price_vnd || 0);
+    if (qty <= 0) outOfStockCount += 1;
+    else if (qty <= threshold) lowStockCount += 1;
+
+    return {
+      ...p,
+      inventory: qty,
+      low_stock_threshold: threshold,
+      sold30d,
+      daysOfSupply,
+      stockState: qty <= 0 ? 'out' : qty <= threshold ? 'low' : 'healthy',
+    };
+  });
+
+  const logs = db
+    .prepare('SELECT * FROM inventory_logs ORDER BY id DESC LIMIT 60')
+    .all();
+
+  res.json({
+    kpis: {
+      totalSkus: products.length,
+      totalUnits,
+      totalStockValueVnd,
+      lowStockCount,
+      outOfStockCount,
+    },
+    items,
+    logs,
+  });
+});
+
+app.post('/api/admin/inventory/adjust', requirePermission('products'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const productId = Number(b.productId);
+  const product = db.prepare('SELECT id, sku, name_vi, inventory, low_stock_threshold, status FROM products WHERE id = ?').get(productId) as any;
+  if (!product) {
+    res.status(404).json({ error: 'Không tìm thấy sản phẩm.' });
+    return;
+  }
+
+  const prevQty = Number(product.inventory || 0);
+  let nextQty = prevQty;
+  if (b.exactQty !== undefined && b.exactQty !== '') {
+    nextQty = Math.max(0, Math.round(Number(b.exactQty)));
+  } else {
+    const delta = Math.round(Number(b.delta || 0));
+    nextQty = Math.max(0, prevQty + delta);
+  }
+  const actualDelta = nextQty - prevQty;
+  const nextThreshold =
+    b.lowStockThreshold !== undefined && b.lowStockThreshold !== ''
+      ? Math.max(1, Math.min(5000, Math.round(Number(b.lowStockThreshold))))
+      : Number(product.low_stock_threshold || 15);
+  const reason = ['restock', 'audit_adjust', 'damaged', 'order_deduct', 'order_cancel_restock'].includes(String(b.reason || ''))
+    ? String(b.reason)
+    : actualDelta >= 0
+      ? 'restock'
+      : 'audit_adjust';
+  const note = String(b.note || '').trim().slice(0, 240);
+
+  let nextStatus = product.status;
+  if (nextQty === 0 && product.status === 'active') nextStatus = 'out_of_stock';
+  else if (nextQty > 0 && product.status === 'out_of_stock') nextStatus = 'active';
+
+  db.prepare('UPDATE products SET inventory = ?, low_stock_threshold = ?, status = ? WHERE id = ?').run(
+    nextQty,
+    nextThreshold,
+    nextStatus,
+    productId
+  );
+
+  if (actualDelta !== 0 || note) {
+    db.prepare(`
+      INSERT INTO inventory_logs (product_id, sku, product_name, delta, previous_qty, new_qty, reason, note, actor_email)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(product.id, product.sku, product.name_vi, actualDelta, prevQty, nextQty, reason, note || 'Cập nhật tồn kho từ CMS', req.authUser!.email);
+  }
+
+  logAudit(req.authUser!.userId, req.authUser!.email, 'ADJUST_INVENTORY', 'product', productId, {
+    sku: product.sku,
+    prevQty,
+    nextQty,
+    delta: actualDelta,
+    reason,
+  });
+  scheduleSnapshotSync(db);
+
+  res.json({ ok: true, inventory: nextQty, low_stock_threshold: nextThreshold, status: nextStatus });
+});
+
+app.post('/api/admin/inventory/bulk-restock', requirePermission('products'), (req: AuthedRequest, res) => {
+  const addQty = Math.max(5, Math.min(2000, Math.round(Number(req.body?.addQty || 50))));
+  const lowItems = db
+    .prepare("SELECT id, sku, name_vi, inventory, status FROM products WHERE status IN ('active', 'out_of_stock') AND inventory <= low_stock_threshold")
+    .all() as any[];
+
+  const tx = db.transaction(() => {
+    for (const p of lowItems) {
+      const prev = Number(p.inventory || 0);
+      const next = prev + addQty;
+      db.prepare("UPDATE products SET inventory = ?, status = CASE WHEN status = 'out_of_stock' THEN 'active' ELSE status END WHERE id = ?").run(
+        next,
+        p.id
+      );
+      db.prepare(`
+        INSERT INTO inventory_logs (product_id, sku, product_name, delta, previous_qty, new_qty, reason, note, actor_email)
+        VALUES (?, ?, ?, ?, ?, ?, 'restock', ?, ?)
+      `).run(p.id, p.sku, p.name_vi, addQty, prev, next, `Nhập kho hàng loạt (+${addQty}) cho SKU sắp hết`, req.authUser!.email);
+    }
+  });
+  tx();
+
+  logAudit(req.authUser!.userId, req.authUser!.email, 'BULK_RESTOCK_INVENTORY', 'products', 'low_stock', {
+    restockedSkus: lowItems.length,
+    addQty,
+  });
+  scheduleSnapshotSync(db);
+  res.json({ ok: true, restockedCount: lowItems.length, addQty });
+});
+
+// ============================================================================
+// 5. AUTOMATED CUSTOMER CARE (CRM) ENGINE
+// ============================================================================
+function findEligibleUsersForCrmRule(rule: any): Array<{ id: number; email: string; full_name: string; tier: string }> {
+  const days = Math.max(1, Math.round(Number(rule.days_threshold || 21)));
+  const trigger = String(rule.trigger_type || '');
+
+  if (trigger === 'welcome_new_member') {
+    return db
+      .prepare(`
+        SELECT id, email, full_name, tier FROM users
+        WHERE role != 'admin'
+          AND created_at >= datetime('now', '-' || ? || ' days')
+      `)
+      .all(days) as any[];
+  }
+  if (trigger === 'repurchase_reminder_21d') {
+    return db
+      .prepare(`
+        SELECT u.id, u.email, u.full_name, u.tier
+        FROM users u
+        WHERE u.role != 'admin'
+          AND EXISTS (
+            SELECT 1 FROM orders o
+            WHERE (o.user_id = u.id OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(u.email)))
+              AND o.order_status != 'Cancelled'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o2
+            WHERE (o2.user_id = u.id OR LOWER(TRIM(o2.customer_email)) = LOWER(TRIM(u.email)))
+              AND o2.order_status != 'Cancelled'
+              AND o2.created_at >= datetime('now', '-' || ? || ' days')
+          )
+      `)
+      .all(days) as any[];
+  }
+  if (trigger === 'winback_inactive_30d') {
+    return db
+      .prepare(`
+        SELECT u.id, u.email, u.full_name, u.tier
+        FROM users u
+        WHERE u.role != 'admin'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o
+            WHERE (o.user_id = u.id OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(u.email)))
+              AND o.created_at >= datetime('now', '-' || ? || ' days')
+          )
+      `)
+      .all(days) as any[];
+  }
+  if (trigger === 'post_purchase_thankyou') {
+    return db
+      .prepare(`
+        SELECT DISTINCT u.id, u.email, u.full_name, u.tier
+        FROM users u
+        JOIN orders o ON (o.user_id = u.id OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(u.email)))
+        WHERE u.role != 'admin'
+          AND o.order_status IN ('Confirmed', 'Processing', 'Shipping', 'Completed')
+          AND o.created_at >= datetime('now', '-' || ? || ' days')
+      `)
+      .all(Math.max(days, 14)) as any[];
+  }
+  if (trigger === 'vip_tier_upgrade') {
+    return db
+      .prepare(`
+        SELECT id, email, full_name, tier FROM users
+        WHERE role != 'admin'
+          AND tier IN ('ROAR Silver', 'ROAR Gold', 'ROAR Reserve')
+      `)
+      .all() as any[];
+  }
+  if (trigger === 'no_order_yet') {
+    return db
+      .prepare(`
+        SELECT u.id, u.email, u.full_name, u.tier FROM users u
+        WHERE u.role != 'admin'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o
+            WHERE o.user_id = u.id OR LOWER(TRIM(o.customer_email)) = LOWER(TRIM(u.email))
+          )
+      `)
+      .all() as any[];
+  }
+  return [];
+}
+
+function executeCrmRule(rule: any, actorEmail: string) {
+  const candidates = findEligibleUsersForCrmRule(rule);
+  let sentCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const u of candidates) {
+      // Prevent spamming identical title within 7 days
+      const recentDup = db
+        .prepare(`
+          SELECT id FROM user_notifications
+          WHERE user_id = ? AND title_vi = ? AND created_at >= datetime('now', '-7 days')
+          LIMIT 1
+        `)
+        .get(u.id, rule.title_vi);
+      if (recentDup) continue;
+
+      createUserNotification(u.id, {
+        titleVi: rule.title_vi,
+        titleEn: rule.title_en,
+        messageVi: rule.message_vi,
+        messageEn: rule.message_en,
+        category: rule.voucher_code ? 'promo' : 'loyalty',
+        linkUrl: rule.link_url || '/promotions',
+      });
+
+      const pts = Math.max(0, Math.round(Number(rule.bonus_points || 0)));
+      if (pts > 0) {
+        db.prepare(`
+          INSERT INTO points_ledger (user_id, entry_type, points, description_vi, description_en)
+          VALUES (?, 'earn_available', ?, ?, ?)
+        `).run(u.id, pts, `Quà CSKH tự động: ${rule.name_vi}`, `Automated CRM reward: ${rule.name_en}`);
+      }
+      sentCount += 1;
+    }
+
+    db.prepare(`
+      UPDATE crm_automation_rules
+      SET last_run_at = datetime('now'), total_sent = total_sent + ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(sentCount, rule.id);
+
+    const summaryText =
+      sentCount > 0
+        ? `Đã gửi chăm sóc tới ${sentCount}/${candidates.length} thành viên phù hợp${rule.bonus_points > 0 ? ` (+${rule.bonus_points} điểm)` : ''}${rule.voucher_code ? ` · Mã ${rule.voucher_code}` : ''}.`
+        : `Tìm thấy ${candidates.length} thành viên nhưng đều đã nhận chăm sóc trong 7 ngày gần nhất (bỏ qua chống trùng lặp).`;
+
+    db.prepare(`
+      INSERT INTO crm_automation_runs (rule_key, rule_name, matched_count, sent_count, actor_email, summary_text)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(rule.rule_key, rule.name_vi, candidates.length, sentCount, actorEmail, summaryText);
+
+    return { matchedCount: candidates.length, sentCount, summaryText };
+  });
+
+  return tx();
+}
+
+app.get('/api/admin/crm/rules', requirePermission('customers'), (_req, res) => {
+  const rules = db.prepare('SELECT * FROM crm_automation_rules ORDER BY id ASC').all() as any[];
+  const enriched = rules.map((r) => ({
+    ...r,
+    eligibleCount: findEligibleUsersForCrmRule(r).length,
+  }));
+  const runs = db.prepare('SELECT * FROM crm_automation_runs ORDER BY id DESC LIMIT 40').all();
+  res.json({ rules: enriched, runs });
+});
+
+app.patch('/api/admin/crm/rules/:id', requirePermission('customers'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM crm_automation_rules WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'CRM rule not found' });
+    return;
+  }
+  const b = req.body || {};
+  db.prepare(`
+    UPDATE crm_automation_rules
+    SET name_vi = ?, name_en = ?, days_threshold = ?, voucher_code = ?, bonus_points = ?,
+        title_vi = ?, title_en = ?, message_vi = ?, message_en = ?, link_url = ?, active = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    b.name_vi !== undefined ? String(b.name_vi).trim().slice(0, 140) : existing.name_vi,
+    b.name_en !== undefined ? String(b.name_en).trim().slice(0, 140) : existing.name_en,
+    b.days_threshold !== undefined ? Math.max(1, Math.min(365, Math.round(Number(b.days_threshold)))) : existing.days_threshold,
+    b.voucher_code !== undefined ? String(b.voucher_code).trim().toUpperCase().slice(0, 40) : existing.voucher_code,
+    b.bonus_points !== undefined ? Math.max(0, Math.min(1000, Math.round(Number(b.bonus_points)))) : existing.bonus_points,
+    b.title_vi !== undefined ? String(b.title_vi).trim().slice(0, 160) : existing.title_vi,
+    b.title_en !== undefined ? String(b.title_en).trim().slice(0, 160) : existing.title_en,
+    b.message_vi !== undefined ? String(b.message_vi).trim().slice(0, 800) : existing.message_vi,
+    b.message_en !== undefined ? String(b.message_en).trim().slice(0, 800) : existing.message_en,
+    b.link_url !== undefined ? (String(b.link_url).startsWith('/') ? String(b.link_url).slice(0, 160) : '/promotions') : existing.link_url,
+    b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
+    id
+  );
+  logAudit(req.authUser!.userId, req.authUser!.email, 'UPDATE_CRM_RULE', 'crm_automation_rules', id, { active: b.active });
+  const updated = db.prepare('SELECT * FROM crm_automation_rules WHERE id = ?').get(id);
+  res.json({ ok: true, rule: updated });
+});
+
+app.post('/api/admin/crm/rules/:id/run', requirePermission('customers'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const rule = db.prepare('SELECT * FROM crm_automation_rules WHERE id = ?').get(id) as any;
+  if (!rule) {
+    res.status(404).json({ error: 'CRM rule not found' });
+    return;
+  }
+  const result = executeCrmRule(rule, req.authUser!.email);
+  logAudit(req.authUser!.userId, req.authUser!.email, 'RUN_CRM_RULE', 'crm_automation_rules', id, result);
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/admin/crm/run-all', requirePermission('customers'), (req: AuthedRequest, res) => {
+  const activeRules = db.prepare('SELECT * FROM crm_automation_rules WHERE active = 1 ORDER BY id ASC').all() as any[];
+  let totalMatched = 0;
+  let totalSent = 0;
+  for (const r of activeRules) {
+    const out = executeCrmRule(r, req.authUser!.email);
+    totalMatched += out.matchedCount;
+    totalSent += out.sentCount;
+  }
+  logAudit(req.authUser!.userId, req.authUser!.email, 'RUN_ALL_CRM_RULES', 'crm_automation_rules', 'all', {
+    rulesRun: activeRules.length,
+    totalMatched,
+    totalSent,
+  });
+  res.json({ ok: true, rulesRun: activeRules.length, totalMatched, totalSent });
 });
 
 app.get('/api/health', (_req, res) => {

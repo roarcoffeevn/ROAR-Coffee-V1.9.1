@@ -44,6 +44,7 @@ import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import { DailyChillRitualBar } from '../components/DailyChillRitualBar';
 import { FlashComboSection } from '../components/FlashComboSection';
 import { MediaImage } from '../components/MediaImage';
+import { PersonalizedPicksSection } from '../components/PersonalizedPicksSection';
 import { TasteFinderSection } from '../components/TasteFinderSection';
 import { VietnamOriginMap } from '../components/VietnamOriginMap';
 import { useI18n } from '../i18n/I18nContext';
@@ -1128,7 +1129,8 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* 2C. 15-SECOND COFFEE TASTE FINDER & DAILY ROAST COMBOS */}
+      {/* 2C. PERSONALIZED PICKS, 15-SECOND COFFEE TASTE FINDER & SEASONAL COMBOS */}
+      <PersonalizedPicksSection />
       <TasteFinderSection products={allCatalogProducts} />
       <FlashComboSection products={allCatalogProducts} />
 

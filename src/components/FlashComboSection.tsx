@@ -20,7 +20,28 @@ interface CmsComboDto {
   discount_pct: number;
   promo_code: string;
   productSlugs: string[];
+  season_tag?: string;
+  starts_at?: string;
+  ends_at?: string;
+  gift_note_vi?: string;
+  gift_note_en?: string;
 }
+
+const SEASON_FILTERS = [
+  { id: 'all', vi: 'Tất cả Combo', en: 'All Combos' },
+  { id: 'autumn_harvest', vi: 'Mùa Thu Hoạch', en: 'Harvest Season' },
+  { id: 'summer_coldbrew', vi: 'Mùa Hè Cold Brew', en: 'Summer Cold Brew' },
+  { id: 'winter_festive', vi: 'Lễ Hội & Quà Biếu', en: 'Festive & Gifting' },
+] as const;
+
+const SEASON_LABELS: Record<string, { vi: string; en: string }> = {
+  autumn_harvest: { vi: 'Mùa Thu Hoạch', en: 'Harvest Edition' },
+  summer_coldbrew: { vi: 'Mùa Hè Cold Brew', en: 'Summer Edition' },
+  winter_festive: { vi: 'Lễ Hội & Quà Biếu', en: 'Festive Edition' },
+  harvest: { vi: 'Mùa Thu Hoạch', en: 'Harvest Edition' },
+  summer: { vi: 'Mùa Hè Cold Brew', en: 'Summer Edition' },
+  festive: { vi: 'Lễ Hội & Quà Biếu', en: 'Festive Edition' },
+};
 
 function getRemainingTimeToday() {
   const now = new Date();
@@ -38,6 +59,7 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
   const { addToCart, formatPrice, setPendingVoucherCode, showToast, apiFetch } = useStore();
   const [countdown, setCountdown] = useState(getRemainingTimeToday);
   const [cmsCombos, setCmsCombos] = useState<CmsComboDto[]>([]);
+  const [seasonFilter, setSeasonFilter] = useState<string>('all');
   const [builderOpen, setBuilderOpen] = useState(false);
 
   // Custom 3-Step Mix & Match + Gift Card State
@@ -122,13 +144,18 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
             badgeText: c.badge_text || `${c.promo_code || 'ROARCOMBO12'} · -${pct}%`,
             promoCode: c.promo_code || 'ROARCOMBO12',
             discountPct: pct,
+            seasonTag: c.season_tag || 'all',
+            startsAt: c.starts_at || '',
+            endsAt: c.ends_at || '',
+            giftNoteVi: c.gift_note_vi || '',
+            giftNoteEn: c.gift_note_en || '',
             items,
             rawTotalVnd,
             discountedVnd,
           };
         })
         .filter((x): x is NonNullable<typeof x> => Boolean(x))
-        .slice(0, 3);
+        .slice(0, 6);
     }
 
     const findByCategories = (cats: string[], fallbackIdx: number) =>
@@ -162,6 +189,11 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
         badgeText: 'ROARCOMBO12 · -12%',
         promoCode: 'ROARCOMBO12',
         discountPct: 12,
+        seasonTag: 'all',
+        startsAt: '',
+        endsAt: '',
+        giftNoteVi: '',
+        giftNoteEn: '',
         items: unique,
         rawTotalVnd,
         discountedVnd,
@@ -274,10 +306,10 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#00552B] dark:text-[#C6A667] inline-flex items-center gap-1.5">
             <Flame className="w-3.5 h-3.5" />
-            <span>{t('Mẻ Rang Trong Ngày & Bộ Combo -12%', 'Fresh Batch Today & -12% Combo Sets')}</span>
+            <span>{t('Mẻ Rang Trong Ngày & Combo Ưu Đãi Theo Mùa', 'Fresh Batch Today & Seasonal Combo Offers')}</span>
           </p>
           <h2 className="text-2xl sm:text-3xl font-bold text-[#202020] dark:text-[#F1EFEA] text-balance">
-            {t('Ưu Đãi Mẻ Rang Mới & Combo Tiết Kiệm', 'Fresh Roast Drops & Curated Combos')}
+            {t('Combo Ưu Đãi Đặc Biệt & Khuyến Mãi Theo Mùa', 'Special Combos & Seasonal Promotions')}
           </h2>
         </div>
 
@@ -301,6 +333,40 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Seasonal Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {SEASON_FILTERS.map((sf) => {
+            const count =
+              sf.id === 'all'
+                ? curatedCombos.length
+                : curatedCombos.filter((c) => c.seasonTag === sf.id).length;
+            const active = seasonFilter === sf.id;
+            return (
+              <button
+                key={sf.id}
+                type="button"
+                onClick={() => setSeasonFilter(sf.id)}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-[#00552B] text-white border-[#00552B] dark:bg-[#C6A667] dark:text-[#111111] dark:border-[#C6A667]'
+                    : 'bg-white dark:bg-[#16221C] text-[#202020]/75 dark:text-[#F1EFEA]/80 border-[#202020]/10 dark:border-white/10 hover:border-[#00552B]/40'
+                }`}
+              >
+                <span>{t(sf.vi, sf.en)}</span>
+                <span className="font-mono text-[10px] opacity-75 tabular-nums">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+        <Link
+          to={localePath('/promotions')}
+          className="text-xs font-semibold text-[#00552B] dark:text-[#C6A667] hover:underline"
+        >
+          {t('Xem tất cả mã khuyến mãi theo mùa →', 'View all seasonal vouchers →')}
+        </Link>
       </div>
 
       {/* Interactive 3-Step Mix & Match Combo + Greeting Card Studio */}
@@ -541,64 +607,93 @@ export const FlashComboSection: React.FC<FlashComboSectionProps> = ({ products }
           ))}
         </div>
 
-        {/* Right: 3 Curated 1-Click Combos (Managed via Admin CMS) */}
-        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {curatedCombos.map((combo) => (
-            <div
-              key={combo.id}
-              className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-[#C6A667]/25 p-4 flex flex-col justify-between space-y-4"
-            >
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  {combo.items.slice(0, 2).map((item) => (
-                    <Link
-                      key={item.id}
-                      to={localePath(`/product/${item.slug}`)}
-                      className="aspect-[4/5] rounded-lg overflow-hidden bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#202020]/8 dark:border-white/10"
-                    >
-                      <MediaImage
-                        imageKey={item.image_key}
-                        alt={lang === 'vi' ? item.name_vi : item.name_en}
-                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                      />
-                    </Link>
-                  ))}
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-[11px] font-mono text-[#00552B] dark:text-[#C6A667] font-semibold inline-flex items-center gap-1">
-                    <Tag className="w-3 h-3" />
-                    <span>{combo.badgeText}</span>
-                  </p>
-                  <h3 className="text-sm font-bold text-[#202020] dark:text-[#F1EFEA] leading-snug">
-                    {t(combo.titleVi, combo.titleEn)}
-                  </h3>
-                  <p className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65 line-clamp-2">
-                    {t(combo.descVi, combo.descEn)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#202020]/8 dark:border-white/10 space-y-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs line-through text-[#202020]/45 dark:text-[#F1EFEA]/45 tabular-nums">
-                    {formatPrice(combo.rawTotalVnd)}
-                  </span>
-                  <span className="text-sm font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
-                    {formatPrice(combo.discountedVnd)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => addBundle(combo)}
-                  className="w-full py-2 px-3 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors"
+        {/* Right: Curated & Seasonal 1-Click Combos (Managed via Admin CMS) */}
+        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {(() => {
+            const visibleCombos =
+              seasonFilter === 'all'
+                ? curatedCombos
+                : curatedCombos.filter((c) => c.seasonTag === seasonFilter);
+            const listToShow = visibleCombos.length > 0 ? visibleCombos : curatedCombos;
+            return listToShow.map((combo) => {
+              const seasonLabel = SEASON_LABELS[combo.seasonTag || ''];
+              const giftNoteText = lang === 'vi' ? combo.giftNoteVi : combo.giftNoteEn;
+              return (
+                <div
+                  key={combo.id}
+                  className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-[#C6A667]/25 p-4 flex flex-col justify-between space-y-4"
                 >
-                  <PackageCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t('Chọn trọn Combo', 'Add Combo')}</span>
-                </button>
-              </div>
-            </div>
-          ))}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {combo.items.slice(0, 2).map((item) => (
+                        <Link
+                          key={item.id}
+                          to={localePath(`/product/${item.slug}`)}
+                          className="aspect-[4/5] rounded-lg overflow-hidden bg-[#F8F5EF] dark:bg-[#0E1512] border border-[#202020]/8 dark:border-white/10"
+                        >
+                          <MediaImage
+                            imageKey={item.image_key}
+                            alt={lang === 'vi' ? item.name_vi : item.name_en}
+                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                          />
+                        </Link>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                        <span className="font-mono text-[#00552B] dark:text-[#C6A667] font-semibold inline-flex items-center gap-1">
+                          <Tag className="w-3 h-3" />
+                          <span>{combo.badgeText}</span>
+                        </span>
+                        {seasonLabel && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#8C6D32] dark:text-[#C6A667]">
+                            {t(seasonLabel.vi, seasonLabel.en)}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-bold text-[#202020] dark:text-[#F1EFEA] leading-snug">
+                        {t(combo.titleVi, combo.titleEn)}
+                      </h3>
+                      <p className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65 line-clamp-2">
+                        {t(combo.descVi, combo.descEn)}
+                      </p>
+                      {giftNoteText && (
+                        <p className="text-[11px] font-medium text-[#00552B] dark:text-[#C6A667] flex items-start gap-1.5 pt-0.5">
+                          <Gift className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span className="line-clamp-2">{giftNoteText}</span>
+                        </p>
+                      )}
+                      {combo.endsAt && (
+                        <p className="text-[10px] font-mono text-[#202020]/50 dark:text-[#F1EFEA]/50 tabular-nums">
+                          {t('Áp dụng đến:', 'Valid until:')} {combo.endsAt}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-[#202020]/8 dark:border-white/10 space-y-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs line-through text-[#202020]/45 dark:text-[#F1EFEA]/45 tabular-nums">
+                        {formatPrice(combo.rawTotalVnd)}
+                      </span>
+                      <span className="text-sm font-bold text-[#00552B] dark:text-[#C6A667] tabular-nums">
+                        {formatPrice(combo.discountedVnd)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addBundle(combo)}
+                      className="w-full py-2 px-3 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors"
+                    >
+                      <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                      <span>{t('Chọn trọn Combo', 'Add Combo')}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
     </section>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Award, Bell, CheckCheck, Cloud, Copy, Gamepad2, Gift, KeyRound, LogOut, PlusCircle, Printer, QrCode, RefreshCw, Shield, ShieldCheck, Sparkles, Tag, UserCheck, Wallet, X } from 'lucide-react';
+import { Award, Bell, BellRing, CheckCheck, Cloud, Copy, Fingerprint, Gamepad2, Gift, KeyRound, LogOut, PlusCircle, Printer, QrCode, RefreshCw, Shield, ShieldCheck, Sparkles, Tag, Trash2, UserCheck, Wallet, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import { useStore } from '../context/StoreContext';
 import { localizeLedgerEntry, localizeOrderStatus, localizePaymentStatus, localizeVariantLabel } from '../lib/i18nHelpers';
@@ -8,10 +8,17 @@ import { MembershipTierVisualizer } from '../components/MembershipTierVisualizer
 import { LoyaltyTierProgressCard } from '../components/LoyaltyTierProgressCard';
 import { DailyCheckinGame } from '../components/DailyCheckinGame';
 import { MyTastingNotebook } from '../components/MyTastingNotebook';
+import { PersonalizedPicksSection } from '../components/PersonalizedPicksSection';
 import { MediaImage } from '../components/MediaImage';
 import { getPromoVoucherImage } from '../lib/media';
 import { getTierDisplayName, normalizeMembershipTierName } from '../lib/membershipTiers';
 import { printOrderInvoice } from '../lib/printDocuments';
+import {
+  detectDefaultDeviceLabel,
+  isBiometricSupported,
+  loginWithBiometricPasskey,
+  registerBiometricPasskey,
+} from '../lib/webauthn';
 
 export const AccountPage: React.FC = () => {
   const { lang, t, localePath } = useI18n();
@@ -38,7 +45,7 @@ export const AccountPage: React.FC = () => {
   const [tab, setTab] = useState<'dashboard' | 'wallet' | 'notifications' | 'vouchers' | 'orders' | 'rewards' | 'profile'>(
     ['dashboard', 'wallet', 'notifications', 'vouchers', 'orders', 'rewards', 'profile'].includes(initialTab) ? initialTab : 'dashboard'
   );
-  const [notifFilter, setNotifFilter] = useState<'all' | 'unread' | 'order' | 'promo'>('all');
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread' | 'order' | 'promo' | 'event' | 'system'>('all');
   const [dash, setDash] = useState<any>(null);
   const [walletData, setWalletData] = useState<any>(null);
   const [giftDispatches, setGiftDispatches] = useState<any[]>([]);
@@ -88,6 +95,116 @@ export const AccountPage: React.FC = () => {
   // Cloud Backups
   const [accountBackups, setAccountBackups] = useState<any[]>([]);
   const [backupBusy, setBackupBusy] = useState(false);
+
+  // Biometric Passkeys (WebAuthn: Fingerprint / Face ID)
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [biometricBusy, setBiometricBusy] = useState(false);
+  const [biometricCreds, setBiometricCreds] = useState<
+    Array<{ id: number; device_name: string; created_at: string; last_used_at: string | null }>
+  >([]);
+  const [biometricDeviceName, setBiometricDeviceName] = useState(() => detectDefaultDeviceLabel());
+
+  // Browser Push Notification Permission
+  const [pushPerm, setPushPerm] = useState<string>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+  const [pushSaving, setPushSaving] = useState(false);
+
+  useEffect(() => {
+    isBiometricSupported().then(setBiometricSupported).catch(() => setBiometricSupported(false));
+  }, []);
+
+  const loadBiometricCreds = async () => {
+    if (!user) return;
+    const res = await apiFetch('/api/auth/webauthn/credentials');
+    if (res.ok) {
+      const d = await res.json();
+      setBiometricCreds(Array.isArray(d.credentials) ? d.credentials : []);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    if (biometricBusy) return;
+    setBiometricBusy(true);
+    try {
+      const res = await loginWithBiometricPasskey(apiFetch, email, lang);
+      if (res.ok && res.user && res.token) {
+        setAuthSession(res.user, res.token);
+        showToast(
+          t(
+            `Đăng nhập thành công bằng ${res.biometricDevice || 'Vân tay / Khuôn mặt'}!`,
+            `Signed in via ${res.biometricDevice || 'Fingerprint / Face ID'}!`
+          )
+        );
+      } else if (res.error) {
+        showToast(res.error);
+      }
+    } finally {
+      setBiometricBusy(false);
+    }
+  };
+
+  const handleRegisterBiometric = async () => {
+    if (biometricBusy) return;
+    setBiometricBusy(true);
+    try {
+      const res = await registerBiometricPasskey(apiFetch, biometricDeviceName, lang);
+      if (res.ok) {
+        showToast(
+          t(
+            'Đã đăng ký Vân tay / Khuôn mặt cho thiết bị này thành công!',
+            'Biometric Fingerprint / Face ID passkey registered!'
+          )
+        );
+        await loadBiometricCreds();
+      } else if (res.error) {
+        showToast(res.error);
+      }
+    } finally {
+      setBiometricBusy(false);
+    }
+  };
+
+  const handleDeleteBiometric = async (credId: number) => {
+    const res = await apiFetch(`/api/auth/webauthn/credentials/${credId}`, { method: 'DELETE' });
+    if (res.ok) {
+      setBiometricCreds((prev) => prev.filter((c) => c.id !== credId));
+      showToast(t('Đã gỡ thiết bị sinh trắc học.', 'Biometric device removed.'));
+    }
+  };
+
+  const handleEnableBrowserPush = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      showToast(t('Trình duyệt hiện tại không hỗ trợ Web Push.', 'Browser notifications are not supported here.'));
+      return;
+    }
+    setPushSaving(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPerm(permission);
+      const enabled = permission === 'granted';
+      await apiFetch('/api/account/push-preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled,
+          deviceLabel: detectDefaultDeviceLabel(),
+        }),
+      });
+      if (enabled) {
+        showToast(t('Đã bật thông báo đẩy trình duyệt thành công!', 'Browser push alerts enabled!'));
+      } else {
+        showToast(
+          t(
+            'Bạn chưa cấp quyền thông báo trên trình duyệt. Hãy bật trong cài đặt trang web nếu muốn nhận push.',
+            'Notification permission was not granted. Enable it in browser site settings to receive push alerts.'
+          )
+        );
+      }
+    } finally {
+      setPushSaving(false);
+    }
+  };
 
   const loadWallet = async () => {
     if (!user) return;
@@ -179,11 +296,13 @@ export const AccountPage: React.FC = () => {
       loadWallet();
       loadGiftDispatches();
       loadAccountBackups();
+      loadBiometricCreds();
     } else {
       setDash(null);
       setWalletData(null);
       setGiftDispatches([]);
       setAccountBackups([]);
+      setBiometricCreds([]);
     }
   }, [user]);
 
@@ -627,6 +746,20 @@ export const AccountPage: React.FC = () => {
               <button type="submit" className="w-full py-2.5 bg-[#00552B] text-white font-semibold rounded hover:bg-[#003D25] cursor-pointer">
                 {requires2FA ? t('Xác nhận 2FA & Đăng nhập', 'Verify 2FA & Sign In') : t('Đăng nhập', 'Sign In')}
               </button>
+
+              <button
+                type="button"
+                disabled={biometricBusy}
+                onClick={handleBiometricLogin}
+                className="w-full py-2.5 px-3 rounded border border-[#00552B]/35 dark:border-[#C6A667]/45 bg-[#F8F5EF] dark:bg-[#0E1512] hover:bg-[#00552B]/10 dark:hover:bg-[#C6A667]/15 text-[#00552B] dark:text-[#C6A667] text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-55"
+              >
+                <Fingerprint className="w-4 h-4 shrink-0" />
+                <span>
+                  {biometricBusy
+                    ? t('Đang xác thực Vân tay / Khuôn mặt...', 'Verifying Biometrics...')
+                    : t('Đăng nhập bằng Vân tay / Khuôn mặt (Face ID · Touch ID)', 'Sign in with Fingerprint / Face ID')}
+                </span>
+              </button>
               <div className="flex items-center justify-between text-xs pt-1">
                 <button type="button" onClick={() => setAuthMode('forgot')} className="text-[#00552B] dark:text-[#C6A667] hover:underline cursor-pointer">
                   {t('Quên mật khẩu?', 'Forgot password?')}
@@ -723,6 +856,8 @@ export const AccountPage: React.FC = () => {
     if (notifFilter === 'unread') return !n.is_read;
     if (notifFilter === 'order') return n.category === 'order';
     if (notifFilter === 'promo') return n.category === 'promo' || n.category === 'loyalty';
+    if (notifFilter === 'event') return n.category === 'event';
+    if (notifFilter === 'system') return n.category === 'system';
     return true;
   });
 
@@ -938,6 +1073,8 @@ export const AccountPage: React.FC = () => {
                           ? t('Khuyến mãi', 'Promo')
                           : n.category === 'loyalty'
                           ? t('Điểm thưởng', 'Loyalty')
+                          : n.category === 'event'
+                          ? t('Sự kiện', 'Event')
                           : t('Hệ thống', 'System')}
                       </span>
                       <span className="text-[#202020]/50 dark:text-[#F1EFEA]/50 tabular-nums">{String(n.created_at).slice(0, 10)}</span>
@@ -950,19 +1087,67 @@ export const AccountPage: React.FC = () => {
             </div>
           </div>
 
+          <PersonalizedPicksSection compact />
+
           <MyTastingNotebook compact />
         </div>
       )}
 
       {tab === 'notifications' && dash && (
         <div className="space-y-5">
+          {/* Browser Push Notifications Opt-in Bar */}
+          <div className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-[#00552B]/10 dark:bg-[#C6A667]/15 text-[#00552B] dark:text-[#C6A667] flex items-center justify-center shrink-0">
+                <BellRing className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-sm font-bold text-[#202020] dark:text-[#F1EFEA]">
+                  {t('Thông báo đẩy trực tiếp (Browser Push Alerts)', 'Live Browser Push Notifications')}
+                </p>
+                <p className="text-xs text-[#202020]/65 dark:text-[#F1EFEA]/65">
+                  {pushPerm === 'granted'
+                    ? t(
+                        'Đang bật — bạn sẽ nhận ngay thông báo đẩy về khuyến mãi theo mùa, cập nhật đơn hàng và sự kiện ROAR.',
+                        'Enabled — you will receive live alerts for seasonal promos, order updates, and ROAR events.'
+                      )
+                    : t(
+                        'Bật thông báo đẩy để không bỏ lỡ ưu đãi Combo mùa, mẻ rang mới, cập nhật đơn hàng và sự kiện Workshop.',
+                        'Enable browser push alerts so you never miss seasonal combos, order updates, or tasting workshops.'
+                      )}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={pushSaving || pushPerm === 'unsupported'}
+              onClick={handleEnableBrowserPush}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors disabled:opacity-50 ${
+                pushPerm === 'granted'
+                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
+                  : 'bg-[#00552B] hover:bg-[#003D25] text-white'
+              }`}
+            >
+              <BellRing className="w-3.5 h-3.5" />
+              <span>
+                {pushPerm === 'granted'
+                  ? t('Đã bật Thông báo đẩy ✓', 'Push Alerts Active ✓')
+                  : pushPerm === 'unsupported'
+                    ? t('Trình duyệt không hỗ trợ', 'Unsupported')
+                    : t('Bật Thông báo đẩy ngay', 'Enable Push Alerts')}
+              </span>
+            </button>
+          </div>
+
           <div className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {[
                 { id: 'all', label: t('Tất cả', 'All') },
                 { id: 'unread', label: `${t('Chưa đọc', 'Unread')} (${unreadCount})` },
-                { id: 'order', label: t('Cập nhật Đơn hàng', 'Order Updates') },
+                { id: 'order', label: t('Đơn hàng', 'Orders') },
                 { id: 'promo', label: t('Khuyến mãi & Điểm', 'Promos & Points') },
+                { id: 'event', label: t('Sự kiện', 'Events') },
+                { id: 'system', label: t('Hệ thống', 'System') },
               ].map((flt) => (
                 <button
                   key={flt.id}
@@ -1018,6 +1203,8 @@ export const AccountPage: React.FC = () => {
                           ? t('Ưu đãi', 'Offer')
                           : n.category === 'loyalty'
                           ? t('Điểm ROAR', 'Points')
+                          : n.category === 'event'
+                          ? t('Sự kiện', 'Event')
                           : t('Hệ thống', 'System')}
                       </span>
                       {!n.is_read && (
@@ -1951,6 +2138,95 @@ export const AccountPage: React.FC = () => {
                   </button>
                 </div>
               </form>
+            )}
+          </div>
+
+          {/* Biometric Authentication (Fingerprint / Face ID · WebAuthn FIDO2) */}
+          <div className="bg-white dark:bg-[#16221C] rounded-xl border border-[#202020]/10 dark:border-white/10 p-6 space-y-4 text-sm lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Fingerprint className="w-5 h-5 text-[#00552B] dark:text-[#C6A667]" />
+                  <span>{t('Xác Thực Sinh Trắc Học (Vân tay / Khuôn mặt · Passkey FIDO2)', 'Biometric Sign-In (Fingerprint / Face ID · Passkeys)')}</span>
+                </h2>
+                <p className="text-xs text-[#202020]/70 dark:text-[#F1EFEA]/70 mt-0.5">
+                  {t(
+                    'Đăng nhập 1 chạm bảo mật cao bằng cảm biến Vân tay (Touch ID / Android Fingerprint), Face ID hoặc Windows Hello mà không cần gõ mật khẩu.',
+                    'Sign in in one tap with hardware-backed Fingerprint, Face ID, or Windows Hello passkeys using FIDO2 cryptographic keys.'
+                  )}
+                </p>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold font-mono tabular-nums ${
+                  biometricCreds.length > 0
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-[#F8F5EF] dark:bg-[#0E1512] text-[#202020]/60 dark:text-[#F1EFEA]/60'
+                }`}
+              >
+                {biometricCreds.length} {t('thiết bị đã liên kết', 'linked devices')}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 text-xs">
+              <input
+                type="text"
+                value={biometricDeviceName}
+                onChange={(e) => setBiometricDeviceName(e.target.value)}
+                placeholder={t('Tên thiết bị (vd: iPhone Face ID, MacBook Touch ID)', 'Device label (e.g. iPhone Face ID)')}
+                className="flex-1 border border-[#202020]/15 dark:border-white/15 dark:bg-[#0E1512] rounded-lg px-3 py-2.5"
+              />
+              <button
+                type="button"
+                disabled={biometricBusy}
+                onClick={handleRegisterBiometric}
+                className="px-4 py-2.5 rounded-lg bg-[#00552B] hover:bg-[#003D25] text-white font-semibold inline-flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-55"
+              >
+                <Fingerprint className="w-4 h-4" />
+                <span>
+                  {biometricBusy
+                    ? t('Đang quét sinh trắc học...', 'Registering Passkey...')
+                    : t('Đăng ký Vân tay / Face ID thiết bị này', 'Register This Device Biometrics')}
+                </span>
+              </button>
+            </div>
+
+            {!biometricSupported && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                {t(
+                  'Lưu ý: Nếu thiết bị đang mở trong khung xem thử (iframe), hãy mở bằng trình duyệt chính trên điện thoại hoặc máy tính có cảm biến vân tay / khuôn mặt để hoàn tất quét sinh trắc học.',
+                  'Note: On embedded previews, open the storefront in a top-level browser tab on a Touch ID / Face ID / Windows Hello device to enroll biometrics.'
+                )}
+              </p>
+            )}
+
+            {biometricCreds.length > 0 && (
+              <div className="divide-y divide-[#202020]/8 dark:divide-white/10 border border-[#202020]/10 dark:border-white/10 rounded-xl overflow-hidden">
+                {biometricCreds.map((cred) => (
+                  <div
+                    key={cred.id}
+                    className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-[#F8F5EF]/60 dark:bg-[#0E1512]/60 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Fingerprint className="w-4 h-4 text-[#00552B] dark:text-[#C6A667] shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#202020] dark:text-[#F1EFEA] truncate">{cred.device_name}</p>
+                        <p className="text-[11px] text-[#202020]/55 dark:text-[#F1EFEA]/55 font-mono tabular-nums">
+                          {t('Đăng ký:', 'Added:')} {String(cred.created_at).slice(0, 16)}
+                          {cred.last_used_at ? ` · ${t('Dùng gần nhất:', 'Last used:')} ${String(cred.last_used_at).slice(0, 16)}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBiometric(cred.id)}
+                      className="px-2.5 py-1.5 rounded-lg border border-red-400/40 text-red-600 dark:text-red-300 hover:bg-red-500/10 inline-flex items-center gap-1 font-semibold cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t('Gỡ bỏ', 'Revoke')}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

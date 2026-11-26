@@ -42,7 +42,13 @@
 }
 
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: 0px;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {

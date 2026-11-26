@@ -8,6 +8,7 @@ import { FloatingAssistDock } from './components/FloatingAssistDock';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { LiveActivityToast } from './components/LiveActivityToast';
+import { MemberPushListener } from './components/MemberPushListener';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
 import { StoreProvider } from './context/StoreContext';
@@ -218,6 +219,7 @@ function AppLayout() {
       <MobileBottomNav />
       <CafeChillPlayer />
       <LiveActivityToast />
+      <MemberPushListener />
       <FloatingAssistDock />
       <OfflineIndicator />
       <CartDrawer />

@@ -11,6 +11,7 @@ import {
 } from '../src/lib/gamesCatalog.ts';
 import { JOURNAL_SEEDS_BATCH_A } from './journalSeedsBatchA.ts';
 import { JOURNAL_SEEDS_BATCH_B } from './journalSeedsBatchB.ts';
+import { BREWING_HANDBOOK_ARTICLES } from '../src/data/brewingHandbook.ts';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -296,6 +297,37 @@ export function initDatabase(): void {
       published_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS brewing_handbook_articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      topic TEXT NOT NULL DEFAULT 'phin',
+      topic_vi TEXT NOT NULL DEFAULT 'Pha Phin & Gu Việt',
+      topic_en TEXT NOT NULL DEFAULT 'Vietnamese Phin',
+      title_vi TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      excerpt_vi TEXT NOT NULL DEFAULT '',
+      excerpt_en TEXT NOT NULL DEFAULT '',
+      read_minutes INTEGER NOT NULL DEFAULT 4,
+      cover_image_key TEXT NOT NULL DEFAULT 'journal_phin_ritual',
+      spec_json TEXT NOT NULL DEFAULT '{}',
+      intro_vi_json TEXT NOT NULL DEFAULT '[]',
+      intro_en_json TEXT NOT NULL DEFAULT '[]',
+      steps_vi_json TEXT NOT NULL DEFAULT '[]',
+      steps_en_json TEXT NOT NULL DEFAULT '[]',
+      barista_tip_vi TEXT NOT NULL DEFAULT '',
+      barista_tip_en TEXT NOT NULL DEFAULT '',
+      primary_product_slug TEXT NOT NULL DEFAULT 'roar-phin-heritage',
+      secondary_product_slug TEXT NOT NULL DEFAULT 'roar-dam-bold',
+      upsell_headline_vi TEXT NOT NULL DEFAULT '',
+      upsell_headline_en TEXT NOT NULL DEFAULT '',
+      upsell_reason_vi TEXT NOT NULL DEFAULT '',
+      upsell_reason_en TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      cms_edited INTEGER NOT NULL DEFAULT 0,
+      published INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS newsletter_subscribers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
@@ -327,9 +359,113 @@ export function initDatabase(): void {
       title_en TEXT NOT NULL,
       message_vi TEXT NOT NULL,
       message_en TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'system' CHECK(category IN ('order', 'promo', 'loyalty', 'system')),
+      category TEXT NOT NULL DEFAULT 'system' CHECK(category IN ('order', 'promo', 'loyalty', 'system', 'event')),
       link_url TEXT DEFAULT '/account',
       is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title_vi TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      message_vi TEXT NOT NULL,
+      message_en TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'promo',
+      target_mode TEXT NOT NULL DEFAULT 'all',
+      target_meta_json TEXT NOT NULL DEFAULT '{}',
+      link_url TEXT DEFAULT '/promotions',
+      push_enabled INTEGER NOT NULL DEFAULT 1,
+      recipient_count INTEGER NOT NULL DEFAULT 0,
+      created_by_email TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_label TEXT NOT NULL DEFAULT 'Browser Device',
+      permission_status TEXT NOT NULL DEFAULT 'granted',
+      endpoint_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS webauthn_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      credential_id TEXT NOT NULL UNIQUE,
+      public_key_spki TEXT NOT NULL,
+      alg INTEGER NOT NULL DEFAULT -7,
+      sign_count INTEGER NOT NULL DEFAULT 0,
+      device_name TEXT NOT NULL DEFAULT 'Thiết bị Sinh trắc học',
+      transports_json TEXT NOT NULL DEFAULT '[]',
+      last_used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS webauthn_challenges (
+      challenge TEXT PRIMARY KEY,
+      user_id INTEGER,
+      email TEXT DEFAULT '',
+      flow TEXT NOT NULL CHECK(flow IN ('register', 'login')),
+      expires_at INTEGER NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS user_taste_preferences (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      brew_methods_json TEXT NOT NULL DEFAULT '[]',
+      roast_level TEXT NOT NULL DEFAULT 'medium_dark',
+      flavor_notes_json TEXT NOT NULL DEFAULT '[]',
+      caffeine_level TEXT NOT NULL DEFAULT 'balanced',
+      favorite_categories_json TEXT NOT NULL DEFAULT '[]',
+      budget_range TEXT NOT NULL DEFAULT 'standard',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      sku TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      delta INTEGER NOT NULL,
+      previous_qty INTEGER NOT NULL,
+      new_qty INTEGER NOT NULL,
+      reason TEXT NOT NULL DEFAULT 'restock',
+      note TEXT DEFAULT '',
+      actor_email TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS crm_automation_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_key TEXT NOT NULL UNIQUE,
+      name_vi TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      days_threshold INTEGER NOT NULL DEFAULT 21,
+      voucher_code TEXT DEFAULT '',
+      bonus_points INTEGER NOT NULL DEFAULT 0,
+      title_vi TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      message_vi TEXT NOT NULL,
+      message_en TEXT NOT NULL,
+      link_url TEXT DEFAULT '/shop',
+      active INTEGER NOT NULL DEFAULT 1,
+      last_run_at TEXT,
+      total_sent INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS crm_automation_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_key TEXT NOT NULL,
+      rule_name TEXT NOT NULL,
+      matched_count INTEGER NOT NULL DEFAULT 0,
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      actor_email TEXT NOT NULL DEFAULT 'system',
+      summary_text TEXT DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -691,6 +827,8 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_chat_channel_id ON realtime_chat_messages(channel, id DESC);
     CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_backups_user ON user_data_backups(user_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_inventory_logs_product ON inventory_logs(product_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_id);
   `);
 
   ensureProductsSchemaUpgraded();
@@ -2004,6 +2142,50 @@ function seedInitialData(): void {
       );
     }
   }
+
+  // Idempotent seed for Brewing Handbook articles (25+ guides) — never overwrites cms_edited rows
+  const checkHandbook = db.prepare('SELECT id, cms_edited FROM brewing_handbook_articles WHERE slug = ?');
+  const insertHandbook = db.prepare(`
+    INSERT INTO brewing_handbook_articles (
+      slug, topic, topic_vi, topic_en, title_vi, title_en, excerpt_vi, excerpt_en,
+      read_minutes, cover_image_key, spec_json, intro_vi_json, intro_en_json,
+      steps_vi_json, steps_en_json, barista_tip_vi, barista_tip_en,
+      primary_product_slug, secondary_product_slug, upsell_headline_vi, upsell_headline_en,
+      upsell_reason_vi, upsell_reason_en, sort_order, cms_edited, published
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+  `);
+  for (let idx = 0; idx < BREWING_HANDBOOK_ARTICLES.length; idx++) {
+    const h = BREWING_HANDBOOK_ARTICLES[idx];
+    const existing = checkHandbook.get(h.slug) as { id: number; cms_edited?: number } | undefined;
+    if (!existing) {
+      insertHandbook.run(
+        h.slug,
+        h.topic,
+        h.topicVi,
+        h.topicEn,
+        h.titleVi,
+        h.titleEn,
+        h.excerptVi,
+        h.excerptEn,
+        h.readMinutes,
+        h.coverImageKey,
+        JSON.stringify(h.spec),
+        JSON.stringify(h.introVi),
+        JSON.stringify(h.introEn),
+        JSON.stringify(h.stepsVi),
+        JSON.stringify(h.stepsEn),
+        h.baristaTipVi,
+        h.baristaTipEn,
+        h.primaryProductSlug,
+        h.secondaryProductSlug,
+        h.upsellHeadlineVi,
+        h.upsellHeadlineEn,
+        h.upsellReasonVi,
+        h.upsellReasonEn,
+        idx + 1
+      );
+    }
+  }
 }
 
 export function logAudit(
@@ -2687,6 +2869,288 @@ function runIncrementalMigrations(): void {
       JSON.stringify(['signature-reserve', 'tieu-den-hat-coi-xay-70g']),
       3
     );
+  }
+
+  // 5c. Upgrade user_notifications CHECK constraint to allow 'event' category on existing DBs
+  const notifTbl = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='user_notifications'").get() as { sql: string } | undefined;
+  if (notifTbl && !notifTbl.sql.includes("'event'")) {
+    db.pragma('foreign_keys = OFF');
+    const migrateNotifTx = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE user_notifications_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title_vi TEXT NOT NULL,
+          title_en TEXT NOT NULL,
+          message_vi TEXT NOT NULL,
+          message_en TEXT NOT NULL,
+          category TEXT NOT NULL DEFAULT 'system' CHECK(category IN ('order', 'promo', 'loyalty', 'system', 'event')),
+          link_url TEXT DEFAULT '/account',
+          is_read INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO user_notifications_new (id, user_id, title_vi, title_en, message_vi, message_en, category, link_url, is_read, created_at)
+        SELECT id, user_id, title_vi, title_en, message_vi, message_en, category, link_url, is_read, created_at FROM user_notifications;
+        DROP TABLE user_notifications;
+        ALTER TABLE user_notifications_new RENAME TO user_notifications;
+      `);
+    });
+    migrateNotifTx();
+    db.pragma('foreign_keys = ON');
+  }
+
+  // 5d. Upgrade combos table with seasonal & gift metadata + seed seasonal combos idempotently
+  const comboCols = db.prepare('PRAGMA table_info(combos)').all() as Array<{ name: string }>;
+  if (!comboCols.some((c) => c.name === 'season_tag')) {
+    db.exec("ALTER TABLE combos ADD COLUMN season_tag TEXT NOT NULL DEFAULT 'all'");
+  }
+  if (!comboCols.some((c) => c.name === 'starts_at')) {
+    db.exec("ALTER TABLE combos ADD COLUMN starts_at TEXT NOT NULL DEFAULT ''");
+  }
+  if (!comboCols.some((c) => c.name === 'ends_at')) {
+    db.exec("ALTER TABLE combos ADD COLUMN ends_at TEXT NOT NULL DEFAULT ''");
+  }
+  if (!comboCols.some((c) => c.name === 'gift_note_vi')) {
+    db.exec("ALTER TABLE combos ADD COLUMN gift_note_vi TEXT NOT NULL DEFAULT ''");
+  }
+  if (!comboCols.some((c) => c.name === 'gift_note_en')) {
+    db.exec("ALTER TABLE combos ADD COLUMN gift_note_en TEXT NOT NULL DEFAULT ''");
+  }
+  if (!comboCols.some((c) => c.name === 'banner_image_key')) {
+    db.exec("ALTER TABLE combos ADD COLUMN banner_image_key TEXT NOT NULL DEFAULT ''");
+  }
+
+  const seasonalCombosSeed = [
+    {
+      slug: 'combo-harvest-autumn',
+      title_vi: 'Combo Mùa Thu Hoạch Tây Nguyên',
+      title_en: 'Highland Harvest Season Trio',
+      desc_vi: 'Bộ 3 hạt rang mùa vụ mới: Robusta S18 Đậm, Arabica Cầu Đất và Phin Truyền Thống — ưu đãi mùa thu hoạch -15%.',
+      desc_en: 'Fresh harvest trio: Robusta S18, Cau Dat Arabica & Traditional Phin — seasonal 15% off.',
+      badge_text: 'MÙA THU HOẠCH · -15%',
+      discount_pct: 15,
+      promo_code: 'ROARSEASON15',
+      product_slugs_json: JSON.stringify(['roar-phin-heritage', 'arabica-selection', 'roar-dam-bold']),
+      season_tag: 'autumn_harvest',
+      starts_at: '2026-09-01',
+      ends_at: '2026-12-31',
+      gift_note_vi: 'Tặng kèm 01 Phin nhôm nguyên khối ROAR & Thiệp vụ mùa',
+      gift_note_en: 'Includes 1 complimentary ROAR aluminum Phin & harvest card',
+      sort_order: 4,
+    },
+    {
+      slug: 'combo-summer-coldbrew',
+      title_vi: 'Combo Mùa Hè Cold Brew Sảng Khoái',
+      title_en: 'Summer Cold Brew Refresh Pack',
+      desc_vi: 'Arabica hương trái cây kết hợp Hòa Tan Gold & Cà phê Phin — pha lạnh ủ 16 giờ cực mượt cho ngày nắng nóng.',
+      desc_en: 'Fruity Arabica paired with Freeze-Dried Gold & Phin blend for crisp 16-hour cold brews.',
+      badge_text: 'MÙA HÈ CHILL · -18%',
+      discount_pct: 18,
+      promo_code: 'ROARSUMMER18',
+      product_slugs_json: JSON.stringify(['arabica-selection', 'instant-gold-collection']),
+      season_tag: 'summer_coldbrew',
+      starts_at: '2026-04-01',
+      ends_at: '2026-12-31',
+      gift_note_vi: 'Tặng kèm công thức 5 món Cold Brew Cam Sả & Bạc Xỉu Lạnh',
+      gift_note_en: 'Includes 5 signature Cold Brew & Iced Latte recipe cards',
+      sort_order: 5,
+    },
+    {
+      slug: 'combo-festive-tet',
+      title_vi: 'Combo Quà Biếu Lễ Hội & Tết Thượng Hạng',
+      title_en: 'Festive & Tet Reserve Gift Hamper',
+      desc_vi: 'Hộp quà biếu sang trọng gồm Signature Reserve, Espresso Gold và Tiêu Sọ Cối Xay Tây Nguyên — giảm ngay 20%.',
+      desc_en: 'Luxury gifting set with Signature Reserve, Espresso Gold & Highland White Pepper Grinder — 20% off.',
+      badge_text: 'LỄ HỘI & TẾT · -20%',
+      discount_pct: 20,
+      promo_code: 'ROARFESTIVE20',
+      product_slugs_json: JSON.stringify(['signature-reserve', 'roar-espresso-gold', 'tieu-so-hat-coi-xay-70g']),
+      season_tag: 'winter_festive',
+      starts_at: '2026-11-01',
+      ends_at: '2027-02-28',
+      gift_note_vi: 'Kèm hộp quà ép kim vàng đồng & túi xách sang trọng miễn phí',
+      gift_note_en: 'Includes gold-foil gift box & complimentary luxury carrier bag',
+      sort_order: 6,
+    },
+  ];
+  const checkComboSlug = db.prepare('SELECT id FROM combos WHERE slug = ?');
+  const insertSeasonalCombo = db.prepare(`
+    INSERT INTO combos (slug, title_vi, title_en, desc_vi, desc_en, badge_text, discount_pct, promo_code, product_slugs_json, active, is_featured, sort_order, season_tag, starts_at, ends_at, gift_note_vi, gift_note_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const sc of seasonalCombosSeed) {
+    if (!checkComboSlug.get(sc.slug)) {
+      insertSeasonalCombo.run(
+        sc.slug, sc.title_vi, sc.title_en, sc.desc_vi, sc.desc_en,
+        sc.badge_text, sc.discount_pct, sc.promo_code, sc.product_slugs_json,
+        sc.sort_order, sc.season_tag, sc.starts_at, sc.ends_at, sc.gift_note_vi, sc.gift_note_en
+      );
+    }
+  }
+
+  // 5e. Seed seasonal promotions idempotently
+  const seasonalPromos = [
+    {
+      code: 'ROARSEASON15',
+      title_vi: 'Ưu Đãi Mùa Thu Hoạch Tây Nguyên — Giảm 15%',
+      title_en: 'Highland Harvest Season — 15% OFF',
+      description_vi: 'Mừng vụ thu hoạch mới Tây Nguyên: giảm ngay 15% (tối đa 180.000₫) cho mọi combo & cà phê rang xay từ 250.000₫.',
+      description_en: 'Celebrate the new highland harvest with 15% OFF (up to 180,000 VND) on combos & roasted coffees from 250,000 VND.',
+      discount_value: 15,
+      max_discount: 180000,
+      min_order_value: 250000,
+      start_date: '2026-09-01',
+      end_date: '2027-03-31',
+    },
+    {
+      code: 'ROARFESTIVE20',
+      title_vi: 'Siêu Ưu Đãi Lễ Hội & Quà Biếu — Giảm 20%',
+      title_en: 'Festive Gifting & Holiday Reserve — 20% OFF',
+      description_vi: 'Ưu đãi đặc biệt mùa lễ hội cuối năm: giảm 20% (tối đa 350.000₫) cho đơn từ 500.000₫ & hộp quà biếu ROAR.',
+      description_en: 'Special festive offer: 20% OFF (up to 350,000 VND) for orders from 500,000 VND & ROAR gift hampers.',
+      discount_value: 20,
+      max_discount: 350000,
+      min_order_value: 500000,
+      start_date: '2026-11-01',
+      end_date: '2027-03-31',
+    },
+    {
+      code: 'ROARCARE10',
+      title_vi: 'Quà Tri Ân Chăm Sóc Thành Viên — Giảm 10%',
+      title_en: 'Member Care & Repurchase Perk — 10% OFF',
+      description_vi: 'Mã ưu đãi tự động gửi tặng thành viên quay lại đặt hạt rang mới trong chu kỳ 21–30 ngày.',
+      description_en: 'Automated member care voucher for returning coffee lovers reordering fresh beans.',
+      discount_value: 10,
+      max_discount: 120000,
+      min_order_value: 150000,
+      start_date: '2026-01-01',
+      end_date: '2027-12-31',
+    },
+  ];
+  const checkPromoCode = db.prepare('SELECT id FROM promotions WHERE code = ?');
+  const insertSeasonalPromo = db.prepare(`
+    INSERT INTO promotions (
+      code, title_vi, title_en, description_vi, description_en, promo_type, discount_type,
+      discount_value, max_discount, min_order_value, eligible_category, start_date, end_date,
+      usage_limit, member_only, min_tier, terms_vi, terms_en, active
+    ) VALUES (?, ?, ?, ?, ?, 'seasonal', 'percent', ?, ?, ?, 'all', ?, ?, 2000, 0, '', 'Áp dụng tại giỏ hàng và trang thanh toán ROAR COFFEE.', 'Valid at ROAR COFFEE cart and checkout.', 1)
+  `);
+  for (const sp of seasonalPromos) {
+    if (!checkPromoCode.get(sp.code)) {
+      insertSeasonalPromo.run(
+        sp.code, sp.title_vi, sp.title_en, sp.description_vi, sp.description_en,
+        sp.discount_value, sp.max_discount, sp.min_order_value, sp.start_date, sp.end_date
+      );
+    }
+  }
+
+  // 5f. Add low_stock_threshold to products table
+  const prodCols = db.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
+  if (!prodCols.some((c) => c.name === 'low_stock_threshold')) {
+    db.exec('ALTER TABLE products ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 15');
+  }
+
+  // 5g. Seed default Automated Customer Care (CRM) Rules idempotently
+  const crmSeedRules = [
+    {
+      rule_key: 'welcome_new_member',
+      name_vi: 'Chào mừng thành viên mới & Tặng mã đơn đầu',
+      name_en: 'Welcome New Members & First-Order Perk',
+      trigger_type: 'welcome_new_member',
+      days_threshold: 7,
+      voucher_code: 'ROARWELCOME10',
+      bonus_points: 20,
+      title_vi: 'Chào mừng bạn đến với đại gia đình ROAR COFFEE!',
+      title_en: 'Welcome to the ROAR COFFEE Community!',
+      message_vi: 'Cảm ơn bạn đã đăng ký thành viên ROAR. Tặng bạn +20 điểm thưởng và mã ưu đãi đơn hàng đầu tiên — khám phá ngay các dòng hạt rang tươi hôm nay!',
+      message_en: 'Thank you for joining ROAR. Enjoy +20 bonus points and a welcome offer for your very first fresh-roast order!',
+      link_url: '/shop',
+    },
+    {
+      rule_key: 'repurchase_reminder_21d',
+      name_vi: 'Nhắc đặt lại hạt rang mới (Chu kỳ 21 ngày)',
+      name_en: 'Fresh Bean Repurchase Reminder (21-Day Cycle)',
+      trigger_type: 'repurchase_reminder_21d',
+      days_threshold: 21,
+      voucher_code: 'ROARCARE10',
+      bonus_points: 15,
+      title_vi: 'Hũ cà phê ở nhà sắp hết chưa? Rang mẻ mới tặng bạn -10%!',
+      title_en: 'Running low on beans? Fresh roast ready with 10% OFF!',
+      message_vi: 'Đã gần 3 tuần kể từ đơn hàng trước — ROAR vừa ra mẻ rang mới cực thơm! Dùng mã ROARCARE10 giảm 10% và nhận ngay +15 điểm chăm sóc.',
+      message_en: 'It has been ~3 weeks since your last bag — a fresh batch just came off the roaster! Use ROARCARE10 for 10% OFF plus +15 bonus points.',
+      link_url: '/account?tab=dashboard',
+    },
+    {
+      rule_key: 'winback_inactive_30d',
+      name_vi: 'Kích hoạt lại khách hàng vắng mặt (>30 ngày)',
+      name_en: 'Win-Back Inactive Members (30+ Days)',
+      trigger_type: 'winback_inactive_30d',
+      days_threshold: 30,
+      voucher_code: 'ROARSEASON15',
+      bonus_points: 30,
+      title_vi: 'ROAR COFFEE nhớ bạn! Gửi tặng mã -15% & +30 điểm thưởng',
+      title_en: 'We miss you at ROAR COFFEE! Here is 15% OFF & +30 pts',
+      message_vi: 'Lâu rồi chưa thấy bạn ghé thưởng thức cà phê mới. Nhận ngay +30 điểm ROAR và mã ROARSEASON15 (-15%) áp dụng cho mọi sản phẩm & combo mùa này.',
+      message_en: 'It has been a while! Enjoy +30 bonus points and code ROARSEASON15 for 15% OFF any fresh roast or seasonal combo.',
+      link_url: '/promotions',
+    },
+    {
+      rule_key: 'post_purchase_care',
+      name_vi: 'Chăm sóc sau mua hàng & Gợi ý công thức pha chuẩn',
+      name_en: 'Post-Purchase Care & Brew Guide Follow-Up',
+      trigger_type: 'post_purchase_thankyou',
+      days_threshold: 3,
+      voucher_code: '',
+      bonus_points: 10,
+      title_vi: 'Cảm ơn đơn hàng ROAR của bạn — Xem mẹo pha chuẩn vị quán!',
+      title_en: 'Thank you for your ROAR order — Unlock Barista Brew Tips!',
+      message_vi: 'Hy vọng bạn hài lòng với mẻ cà phê mới nhận. Ghé Cẩm nang pha chế 25 bài để chiết xuất trọn vị thơm ngon nhất — tặng thêm +10 điểm tri ân!',
+      message_en: 'Hope you are loving your fresh roast! Check out our 25 Brewing Guides for optimal extraction — plus +10 thank-you points!',
+      link_url: '/brewing-handbook',
+    },
+    {
+      rule_key: 'vip_gold_reserve_perk',
+      name_vi: 'Chăm sóc VIP Hạng Bạc / Vàng / Thượng Hạng',
+      name_en: 'VIP Silver / Gold / Reserve Exclusive Care',
+      trigger_type: 'vip_tier_upgrade',
+      days_threshold: 14,
+      voucher_code: 'ROARFESTIVE20',
+      bonus_points: 50,
+      title_vi: 'Đặc quyền Thành viên VIP ROAR: Giảm 20% Combo Thượng Hạng',
+      title_en: 'ROAR VIP Member Exclusive: 20% OFF Reserve Combos',
+      message_vi: 'Tri ân thành viên thân thiết ROAR CLUB: Tặng +50 điểm thưởng và quyền ưu tiên mã ROARFESTIVE20 (-20%) cho bộ sưu tập mùa lễ hội.',
+      message_en: 'Thank you for being a ROAR VIP member: enjoy +50 bonus points and priority access to ROARFESTIVE20 (20% OFF).',
+      link_url: '/promotions',
+    },
+    {
+      rule_key: 'no_order_activation',
+      name_vi: 'Nhắc thành viên đã đăng ký nhưng chưa phát sinh đơn',
+      name_en: 'Convert Registered Members Without Orders',
+      trigger_type: 'no_order_yet',
+      days_threshold: 5,
+      voucher_code: 'ROARCARE10',
+      bonus_points: 25,
+      title_vi: 'Đừng bỏ lỡ ưu đãi thành viên mới & Combo thử vị ROAR!',
+      title_en: 'Try Your First ROAR Roast with 10% OFF + 25 Bonus Points',
+      message_vi: 'Bạn đã tạo tài khoản ROAR nhưng chưa thử ly cà phê đầu tiên? Chọn ngay gu pha yêu thích và áp mã ROARCARE10 để nhận ưu đãi ngay hôm nay.',
+      message_en: 'Ready for your first ROAR cup? Pick your taste profile and apply ROARCARE10 for an instant member discount today.',
+      link_url: '/shop',
+    },
+  ];
+  const checkCrmRule = db.prepare('SELECT id FROM crm_automation_rules WHERE rule_key = ?');
+  const insertCrmRule = db.prepare(`
+    INSERT INTO crm_automation_rules (
+      rule_key, name_vi, name_en, trigger_type, days_threshold, voucher_code, bonus_points,
+      title_vi, title_en, message_vi, message_en, link_url, active
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `);
+  for (const r of crmSeedRules) {
+    if (!checkCrmRule.get(r.rule_key)) {
+      insertCrmRule.run(
+        r.rule_key, r.name_vi, r.name_en, r.trigger_type, r.days_threshold,
+        r.voucher_code, r.bonus_points, r.title_vi, r.title_en, r.message_vi, r.message_en, r.link_url
+      );
+    }
   }
 
   // 6. Ensure users RBAC columns exist & configure Super Admin + sample staff editor

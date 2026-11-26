@@ -14,6 +14,7 @@ export interface RoarCmsSnapshot {
     personalities: any[];
     cms_pages: any[];
     journal_articles: any[];
+    brewing_handbook_articles?: any[];
     promotions: any[];
     membership_tiers: any[];
     loyalty_settings: any[];
@@ -36,6 +37,7 @@ export function buildCmsSnapshot(db: Database.Database): RoarCmsSnapshot {
       personalities: db.prepare('SELECT * FROM personalities ORDER BY sort_order ASC, id ASC').all(),
       cms_pages: db.prepare('SELECT * FROM cms_pages ORDER BY group_name ASC, slug ASC').all(),
       journal_articles: db.prepare('SELECT * FROM journal_articles ORDER BY id ASC').all(),
+      brewing_handbook_articles: db.prepare('SELECT * FROM brewing_handbook_articles ORDER BY sort_order ASC, id ASC').all(),
       promotions: db.prepare('SELECT * FROM promotions ORDER BY id ASC').all(),
       membership_tiers: db.prepare('SELECT * FROM membership_tiers ORDER BY min_spend_vnd ASC').all(),
       loyalty_settings: db.prepare('SELECT * FROM loyalty_settings ORDER BY id ASC').all(),

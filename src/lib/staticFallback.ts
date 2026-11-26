@@ -1,4 +1,5 @@
 import type { Product, CmsPageData, CoffeeOrigin, Personality } from '../context/StoreContext';
+import { BREWING_HANDBOOK_ARTICLES, type BrewingHandbookArticle } from '../data/brewingHandbook';
 import { getStaticProductReviews } from './staticRuntime';
 
 interface SnapshotFile {
@@ -10,6 +11,7 @@ interface SnapshotFile {
     personalities: any[];
     cms_pages: any[];
     journal_articles: any[];
+    brewing_handbook_articles?: any[];
     promotions: any[];
     membership_tiers: any[];
     loyalty_settings: any[];
@@ -281,4 +283,43 @@ export async function fetchPromotionsWithFallback(): Promise<any[]> {
   return snap.tables.promotions.filter(
     (p) => (p.active === 1 || p.active === true) && p.start_date <= today && p.end_date >= today
   );
+}
+
+export async function fetchBrewingHandbookWithFallback(): Promise<BrewingHandbookArticle[]> {
+  const live = await fetchJsonSafe('/api/brewing-handbook');
+  if (live && Array.isArray(live.articles) && live.articles.length > 0) {
+    return live.articles as BrewingHandbookArticle[];
+  }
+  const snap = await loadStaticSnapshot();
+  if (snap?.tables?.brewing_handbook_articles?.length) {
+    return snap.tables.brewing_handbook_articles
+      .filter((r) => r.published === 1 || r.published === true)
+      .map((r) => ({
+        id: Number(r.id),
+        slug: String(r.slug),
+        topic: (r.topic || 'phin') as BrewingHandbookArticle['topic'],
+        topicVi: String(r.topic_vi || ''),
+        topicEn: String(r.topic_en || ''),
+        titleVi: String(r.title_vi || ''),
+        titleEn: String(r.title_en || r.title_vi || ''),
+        excerptVi: String(r.excerpt_vi || ''),
+        excerptEn: String(r.excerpt_en || r.excerpt_vi || ''),
+        readMinutes: Number(r.read_minutes || 4),
+        coverImageKey: String(r.cover_image_key || 'journal_phin_ritual'),
+        spec: safeParseJson(r.spec_json, { dose: '', water: '', temp: '', time: '', grindVi: '', grindEn: '' }),
+        introVi: safeParseJson(r.intro_vi_json, []),
+        introEn: safeParseJson(r.intro_en_json, []),
+        stepsVi: safeParseJson(r.steps_vi_json, []),
+        stepsEn: safeParseJson(r.steps_en_json, []),
+        baristaTipVi: String(r.barista_tip_vi || ''),
+        baristaTipEn: String(r.barista_tip_en || ''),
+        primaryProductSlug: String(r.primary_product_slug || 'roar-phin-heritage'),
+        secondaryProductSlug: String(r.secondary_product_slug || 'roar-dam-bold'),
+        upsellHeadlineVi: String(r.upsell_headline_vi || ''),
+        upsellHeadlineEn: String(r.upsell_headline_en || ''),
+        upsellReasonVi: String(r.upsell_reason_vi || ''),
+        upsellReasonEn: String(r.upsell_reason_en || ''),
+      }));
+  }
+  return BREWING_HANDBOOK_ARTICLES;
 }

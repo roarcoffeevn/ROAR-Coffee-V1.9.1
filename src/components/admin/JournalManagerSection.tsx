@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   BarChart3,
+  BookOpen,
   Camera,
   Check,
   Edit3,
@@ -15,6 +16,7 @@ import {
   Heading3,
   Image as ImageIcon,
   ImagePlus,
+  LayoutTemplate,
   List,
   Plus,
   Quote,
@@ -34,6 +36,7 @@ import { getArticleEnrichment, type JournalFigure } from '../../lib/journalEnric
 import { useStore } from '../../context/StoreContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { MediaPickerModal, type MediaAssetRecord } from './MediaPickerModal';
+import { BrewingHandbookManagerSection } from './BrewingHandbookManagerSection';
 
 export interface JournalAdminArticle {
   id: number;
@@ -61,6 +64,7 @@ interface JournalManagerSectionProps {
   mediaAssets: MediaAssetRecord[];
   onRefresh: () => Promise<void> | void;
   onMediaUploaded: () => Promise<void> | void;
+  onOpenPagesManager?: () => void;
 }
 
 const JOURNAL_CATEGORIES = [
@@ -117,13 +121,32 @@ export const JournalManagerSection: React.FC<JournalManagerSectionProps> = ({
   mediaAssets,
   onRefresh,
   onMediaUploaded,
+  onOpenPagesManager,
 }) => {
   const { lang, t } = useI18n();
   const { apiFetch, showToast } = useStore();
 
+  const [contentHub, setContentHub] = useState<'journal' | 'handbook'>('journal');
+  const [handbookCount, setHandbookCount] = useState<number>(25);
+
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editorTab, setEditorTab] = useState<'content' | 'gallery' | 'preview'>('content');
+
+  useEffect(() => {
+    let active = true;
+    apiFetch('/api/admin/brewing-handbook')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && Array.isArray(data?.articles)) {
+          setHandbookCount(data.articles.length);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [apiFetch]);
 
   // List filters
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
@@ -481,10 +504,87 @@ export const JournalManagerSection: React.FC<JournalManagerSectionProps> = ({
         ? t('Chọn hoặc tải ảnh để chèn trực tiếp vào nội dung', 'Select or Upload Inline Article Image')
         : t('Chọn hoặc tải ảnh minh họa trong bài (Fig. 2 – Fig. 6)', 'Select or Upload Gallery Figure');
 
+  const renderContentHubBar = () => (
+    <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 lg:pb-0">
+        <button
+          type="button"
+          onClick={() => {
+            setContentHub('journal');
+            setMode('list');
+          }}
+          className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 inline-flex items-center gap-2 transition-colors cursor-pointer ${
+            contentHub === 'journal'
+              ? 'bg-[#00552B] text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>{t('Tạp chí Cà phê (B001–B050 & Bài tự viết)', 'Coffee Journal (B001–B050 & Custom)')}</span>
+          <span
+            className={`font-mono text-[11px] tabular-nums ${
+              contentHub === 'journal' ? 'text-[#C6A667]' : 'text-slate-500'
+            }`}
+          >
+            {articles.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setContentHub('handbook');
+            setMode('list');
+          }}
+          className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 inline-flex items-center gap-2 transition-colors cursor-pointer ${
+            contentHub === 'handbook'
+              ? 'bg-[#00552B] text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          <span>{t('Cẩm nang Pha chế (Hướng dẫn & Công thức)', 'Brewing Handbook Guides')}</span>
+          <span
+            className={`font-mono text-[11px] tabular-nums ${
+              contentHub === 'handbook' ? 'text-[#C6A667]' : 'text-slate-500'
+            }`}
+          >
+            {handbookCount}
+          </span>
+        </button>
+      </div>
+
+      {onOpenPagesManager && (
+        <button
+          type="button"
+          onClick={onOpenPagesManager}
+          className="px-3 py-2 rounded-lg border border-slate-200 hover:border-[#00552B] hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          <LayoutTemplate className="w-3.5 h-3.5 text-[#00552B]" />
+          <span>{t('Trang con Website (Về ROAR, Vùng trồng, B2B, Chính sách) →', 'Website Subpages (About, Origins, B2B, Legal) →')}</span>
+        </button>
+      )}
+    </div>
+  );
+
+  if (contentHub === 'handbook') {
+    return (
+      <div className="space-y-3 sm:space-y-4">
+        {renderContentHubBar()}
+        <BrewingHandbookManagerSection
+          mediaAssets={mediaAssets}
+          onMediaUploaded={onMediaUploaded}
+          onCountChange={setHandbookCount}
+        />
+      </div>
+    );
+  }
+
   if (mode === 'edit') {
     return (
       <>
         <div className="space-y-4">
+          {renderContentHubBar()}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
@@ -1093,6 +1193,7 @@ export const JournalManagerSection: React.FC<JournalManagerSectionProps> = ({
   return (
     <>
       <div className="space-y-3 sm:space-y-4">
+        {renderContentHubBar()}
         {/* Top Action & Filter Bar */}
         <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">

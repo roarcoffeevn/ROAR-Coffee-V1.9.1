@@ -4,6 +4,7 @@ import { AdminWalletPointsPanel } from '../components/AdminWalletPointsPanel';
 import {
   Archive,
   Bell,
+  Boxes,
   Briefcase,
   CheckCircle2,
   Clock,
@@ -15,13 +16,16 @@ import {
   Eye,
   FileEdit,
   FileText,
+  Fingerprint,
   Gamepad2,
+  HeartHandshake,
   Image as ImageIcon,
   ImagePlus,
   KeyRound,
   LayoutDashboard,
   Lock,
   LogOut,
+  Megaphone,
   Menu,
   Package,
   PackageCheck,
@@ -66,10 +70,14 @@ import { AdminMenuCategoryManager } from '../components/admin/AdminMenuCategoryM
 import { AdminHeroBannerManager } from '../components/admin/AdminHeroBannerManager';
 import { AdminGamesManager } from '../components/admin/AdminGamesManager';
 import { AdminCombosManager } from '../components/admin/AdminCombosManager';
+import { AdminNotificationsCenter } from '../components/admin/AdminNotificationsCenter';
+import { AdminInventoryManager } from '../components/admin/AdminInventoryManager';
+import { AdminCrmAutomationManager } from '../components/admin/AdminCrmAutomationManager';
 import { ResetPasswordModal, type ResetPasswordTarget } from '../components/admin/ResetPasswordModal';
 import { AdminOverviewDashboard } from '../components/admin/AdminOverviewDashboard';
+import { loginWithBiometricPasskey } from '../lib/webauthn';
 
-type CmsSection = AdminPermission | 'menus' | 'hero' | 'games' | 'combos';
+type CmsSection = AdminPermission | 'menus' | 'hero' | 'games' | 'combos' | 'notifications' | 'inventory' | 'crm';
 
 const CATEGORY_LABELS_VI: Record<string, string> = {
   roasted: 'Cà phê Rang xay',
@@ -317,7 +325,11 @@ export const AdminCmsPage: React.FC = () => {
           ? hasAdminPermission(user, 'promotions')
           : requestedSectionParam === 'combos'
             ? hasAdminPermission(user, 'promotions') || hasAdminPermission(user, 'products')
-            : hasAdminPermission(user, requestedSectionParam))
+            : requestedSectionParam === 'inventory'
+              ? hasAdminPermission(user, 'products')
+              : requestedSectionParam === 'notifications' || requestedSectionParam === 'crm'
+                ? hasAdminPermission(user, 'customers')
+                : hasAdminPermission(user, requestedSectionParam))
     ) {
       setSection(requestedSectionParam);
     }
@@ -779,6 +791,33 @@ export const AdminCmsPage: React.FC = () => {
               >
                 {loggingIn ? t('Đang đăng nhập...', 'Signing In...') : t('Đăng nhập Quản trị CMS', 'Sign In to CMS')}
               </button>
+              <button
+                type="button"
+                disabled={loggingIn}
+                onClick={async () => {
+                  setLoggingIn(true);
+                  setLoginError('');
+                  try {
+                    const res = await loginWithBiometricPasskey(apiFetch, email, lang);
+                    if (!res.ok || !res.user || !res.token) {
+                      setLoginError(res.error || t('Xác thực sinh trắc học thất bại', 'Biometric verification failed'));
+                      return;
+                    }
+                    if (res.user.role !== 'admin') {
+                      setLoginError(t('Tài khoản sinh trắc học này không có quyền Quản trị CMS.', 'This biometric passkey does not have Admin CMS privileges.'));
+                      return;
+                    }
+                    setAuthSession(res.user, res.token);
+                    showToast(t('Đăng nhập CMS bằng Vân tay / Khuôn mặt thành công!', 'Signed into CMS with Biometrics!'));
+                  } finally {
+                    setLoggingIn(false);
+                  }
+                }}
+                className="w-full py-2.5 px-3 rounded-lg border border-[#C6A667]/45 bg-[#0D1B14] hover:bg-[#C6A667]/15 text-[#C6A667] text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-55"
+              >
+                <Fingerprint className="w-4 h-4 shrink-0" />
+                <span>{t('Đăng nhập nhanh bằng Vân tay / Khuôn mặt', 'Quick Sign-In with Fingerprint / Face ID')}</span>
+              </button>
               <div className="flex flex-wrap justify-between items-center gap-2 text-xs text-slate-300">
                 <Link to="/" className="hover:text-white">
                   ← {t('Về trang chủ', 'Back to Storefront')}
@@ -846,6 +885,7 @@ export const AdminCmsPage: React.FC = () => {
       groupLabel: t('Cửa hàng (WooCommerce)', 'Store (WooCommerce)'),
       items: [
         { id: 'products', label: t('Sản phẩm', 'Products'), icon: <Package className="w-4 h-4" />, count: products.length },
+        { id: 'inventory', label: t('Quản lý Tồn kho', 'Inventory Control'), icon: <Boxes className="w-4 h-4" /> },
         { id: 'orders', label: t('Đơn hàng', 'Orders'), icon: <ShoppingCart className="w-4 h-4" />, count: orders.length },
         {
           id: 'customers',
@@ -853,6 +893,8 @@ export const AdminCmsPage: React.FC = () => {
           icon: <Users className="w-4 h-4" />,
           count: customers.length,
         },
+        { id: 'notifications', label: t('Thông báo & Đẩy', 'Broadcast & Push'), icon: <Megaphone className="w-4 h-4" /> },
+        { id: 'crm', label: t('CSKH Tự động (CRM)', 'CRM Automation'), icon: <HeartHandshake className="w-4 h-4" /> },
         { id: 'promotions', label: t('Khuyến mãi', 'Promotions'), icon: <Tag className="w-4 h-4" />, count: promotions.length },
         { id: 'combos', label: t('Combo & Quà tặng', 'Combos & Bundles'), icon: <PackageCheck className="w-4 h-4" /> },
         { id: 'games', label: t('Game & Quà tặng', 'Games & Gifts'), icon: <Gamepad2 className="w-4 h-4" /> },
@@ -891,7 +933,11 @@ export const AdminCmsPage: React.FC = () => {
             ? hasAdminPermission(user, 'promotions')
             : item.id === 'combos'
               ? hasAdminPermission(user, 'promotions') || hasAdminPermission(user, 'products')
-              : hasAdminPermission(user, item.id)
+              : item.id === 'inventory'
+                ? hasAdminPermission(user, 'products')
+                : item.id === 'notifications' || item.id === 'crm'
+                  ? hasAdminPermission(user, 'customers')
+                  : hasAdminPermission(user, item.id)
       ),
     }))
     .filter((grp) => grp.items.length > 0);
@@ -1111,6 +1157,7 @@ export const AdminCmsPage: React.FC = () => {
               mediaAssets={mediaAssets}
               onRefresh={loadAll}
               onMediaUploaded={loadMedia}
+              onOpenPagesManager={() => selectSection('pages')}
             />
           )}
 
@@ -2307,6 +2354,21 @@ export const AdminCmsPage: React.FC = () => {
           {/* 7B. MINI-GAMES, REWARDS & ATTACHED GIFTS (GAME & QUÀ TẶNG) */}
           {resolvedSection === 'games' && hasAdminPermission(user, 'promotions') && (
             <AdminGamesManager />
+          )}
+
+          {/* 7C. BROADCAST & SELECTIVE MEMBER NOTIFICATIONS + PUSH ALERTS */}
+          {resolvedSection === 'notifications' && hasAdminPermission(user, 'customers') && (
+            <AdminNotificationsCenter customers={customers} />
+          )}
+
+          {/* 7D. INVENTORY MANAGEMENT & STOCK AUDIT LOGS */}
+          {resolvedSection === 'inventory' && hasAdminPermission(user, 'products') && (
+            <AdminInventoryManager onStockChanged={loadAll} />
+          )}
+
+          {/* 7E. AUTOMATED CUSTOMER CARE (CRM WORKFLOWS) */}
+          {resolvedSection === 'crm' && hasAdminPermission(user, 'customers') && (
+            <AdminCrmAutomationManager />
           )}
 
           {/* 8. B2B INQUIRIES & NEWSLETTER SUBSCRIBERS (YÊU CẦU & NEWSLETTER) */}

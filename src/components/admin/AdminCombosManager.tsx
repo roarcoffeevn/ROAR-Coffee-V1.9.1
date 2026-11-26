@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Edit3, PackageCheck, Plus, RefreshCw, Save, Search, Sparkles, Star, Tag, Trash2, X } from 'lucide-react';
+import { Bell, Calendar, Check, Edit3, Gift, PackageCheck, Plus, RefreshCw, Save, Search, Sparkles, Star, Tag, Trash2, X } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { type Product, useStore } from '../../context/StoreContext';
 import { MediaImage } from '../MediaImage';
@@ -15,11 +15,23 @@ export interface ComboRecord {
   discount_pct: number;
   promo_code: string;
   productSlugs: string[];
+  season_tag?: string;
+  starts_at?: string;
+  ends_at?: string;
+  gift_note_vi?: string;
+  gift_note_en?: string;
   active: number;
   is_featured: number;
   sort_order: number;
   updated_at?: string;
 }
+
+const SEASON_OPTIONS = [
+  { value: 'all', vi: 'Quanh năm (Mặc định)', en: 'All-Year (Default)' },
+  { value: 'autumn_harvest', vi: 'Mùa Thu Hoạch (Harvest)', en: 'Harvest Season' },
+  { value: 'summer_coldbrew', vi: 'Mùa Hè Cold Brew', en: 'Summer Cold Brew' },
+  { value: 'winter_festive', vi: 'Lễ Hội & Quà Biếu Tết', en: 'Festive & Gifting' },
+];
 
 interface AdminCombosManagerProps {
   products: Product[];
@@ -37,6 +49,11 @@ const EMPTY_FORM = {
   discount_pct: 12,
   promo_code: 'ROARCOMBO12',
   productSlugs: [] as string[],
+  season_tag: 'all',
+  starts_at: '',
+  ends_at: '',
+  gift_note_vi: '',
+  gift_note_en: '',
   active: true,
   is_featured: true,
   sort_order: 10,
@@ -49,6 +66,7 @@ export const AdminCombosManager: React.FC<AdminCombosManagerProps> = ({ products
   const [combos, setCombos] = useState<ComboRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [broadcastingId, setBroadcastingId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -101,11 +119,50 @@ export const AdminCombosManager: React.FC<AdminCombosManagerProps> = ({ products
       discount_pct: Number(c.discount_pct ?? 12),
       promo_code: c.promo_code || 'ROARCOMBO12',
       productSlugs: Array.isArray(c.productSlugs) ? c.productSlugs : [],
+      season_tag: c.season_tag || 'all',
+      starts_at: c.starts_at || '',
+      ends_at: c.ends_at || '',
+      gift_note_vi: c.gift_note_vi || '',
+      gift_note_en: c.gift_note_en || '',
       active: Boolean(c.active),
       is_featured: Boolean(c.is_featured),
       sort_order: Number(c.sort_order ?? 10),
     });
     setShowForm(true);
+  };
+
+  const broadcastComboPromo = async (combo: ComboRecord) => {
+    if (broadcastingId !== null) return;
+    setBroadcastingId(combo.id);
+    try {
+      const res = await apiFetch('/api/admin/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titleVi: `Ưu đãi mới: ${combo.title_vi} (-${combo.discount_pct}%)`,
+          titleEn: `New Seasonal Combo: ${combo.title_en} (-${combo.discount_pct}%)`,
+          messageVi: `${combo.desc_vi}${combo.gift_note_vi ? ` · ${combo.gift_note_vi}` : ''}. Áp dụng mã ${combo.promo_code} ngay hôm nay!`,
+          messageEn: `${combo.desc_en}${combo.gift_note_en ? ` · ${combo.gift_note_en}` : ''}. Use code ${combo.promo_code} today!`,
+          category: 'promo',
+          targetMode: 'all',
+          pushEnabled: true,
+          linkUrl: '/promotions',
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showToast(
+          t(
+            `Đã phát thông báo & push ưu đãi "${combo.title_vi}" tới ${d.sentCount || 0} thành viên!`,
+            `Broadcasted "${combo.title_en}" to ${d.sentCount || 0} members!`
+          )
+        );
+      } else {
+        showToast(d.error || t('Không thể gửi thông báo lúc này', 'Unable to send notification'));
+      }
+    } finally {
+      setBroadcastingId(null);
+    }
   };
 
   const toggleProductSlug = (slug: string) => {
@@ -362,6 +419,64 @@ export const AdminCombosManager: React.FC<AdminCombosManagerProps> = ({ products
             </div>
           </div>
 
+          {/* Seasonal Campaign & Gift Settings */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">{t('Mùa / Chiến dịch', 'Season / Campaign')}</label>
+              <select
+                value={form.season_tag}
+                onChange={(e) => setForm({ ...form, season_tag: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              >
+                {SEASON_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {t(opt.vi, opt.en)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">{t('Ngày bắt đầu', 'Start Date')}</label>
+              <input
+                type="date"
+                value={form.starts_at}
+                onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">{t('Ngày kết thúc', 'End Date')}</label>
+              <input
+                type="date"
+                value={form.ends_at}
+                onChange={(e) => setForm({ ...form, ends_at: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white font-mono"
+              />
+            </div>
+            <div className="sm:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">{t('Quà tặng kèm (Tiếng Việt)', 'Complimentary Gift Note (VI)')}</label>
+                <input
+                  type="text"
+                  value={form.gift_note_vi}
+                  onChange={(e) => setForm({ ...form, gift_note_vi: e.target.value })}
+                  placeholder="vd: Tặng kèm Phin nhôm cao cấp & Thiệp ép kim"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">{t('Quà tặng kèm (Tiếng Anh)', 'Complimentary Gift Note (EN)')}</label>
+                <input
+                  type="text"
+                  value={form.gift_note_en}
+                  onChange={(e) => setForm({ ...form, gift_note_en: e.target.value })}
+                  placeholder="e.g. Free Anodized Phin & Foil Greeting Card"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Product Picker */}
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -527,10 +642,29 @@ export const AdminCombosManager: React.FC<AdminCombosManagerProps> = ({ products
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">{lang === 'vi' ? combo.title_vi : combo.title_en}</h3>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h3 className="text-sm font-bold text-slate-900">{lang === 'vi' ? combo.title_vi : combo.title_en}</h3>
+                      {combo.season_tag && combo.season_tag !== 'all' && (
+                        <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                          {combo.season_tag}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
                       {lang === 'vi' ? combo.desc_vi : combo.desc_en}
                     </p>
+                    {(combo.gift_note_vi || combo.gift_note_en) && (
+                      <p className="text-[11px] text-[#00552B] font-medium flex items-center gap-1 mt-1.5">
+                        <Gift className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{lang === 'vi' ? combo.gift_note_vi : combo.gift_note_en}</span>
+                      </p>
+                    )}
+                    {(combo.starts_at || combo.ends_at) && (
+                      <p className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-1 tabular-nums">
+                        <Calendar className="w-3 h-3 shrink-0" />
+                        <span>{combo.starts_at || '—'} → {combo.ends_at || '—'}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -555,13 +689,23 @@ export const AdminCombosManager: React.FC<AdminCombosManagerProps> = ({ products
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <div className="font-mono tabular-nums">
                     <span className="text-[11px] line-through text-slate-400 mr-2">{formatPrice(rawVnd)}</span>
                     <span className="text-sm font-bold text-[#00552B]">{formatPrice(finalVnd)}</span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={broadcastingId === combo.id}
+                      onClick={() => broadcastComboPromo(combo)}
+                      title={t('Phát thông báo đẩy tới thành viên về Combo này', 'Broadcast this seasonal combo to members')}
+                      className="px-2 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Bell className="w-3 h-3" />
+                      <span className="hidden xl:inline">{t('Phát TB', 'Notify')}</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => openEdit(combo)}

@@ -90,6 +90,13 @@ export const ProductDetailPage: React.FC = () => {
         setSelectedVariantIdx(0);
         setActiveImageIdx(0);
         trackRecentlyViewed(d.product.slug);
+        try {
+          const prevSlugs: string[] = JSON.parse(localStorage.getItem('roar_recent_viewed_slugs') || '[]');
+          const nextSlugs = [d.product.slug, ...(Array.isArray(prevSlugs) ? prevSlugs : []).filter((s) => s !== d.product.slug)].slice(0, 8);
+          localStorage.setItem('roar_recent_viewed_slugs', JSON.stringify(nextSlugs));
+        } catch {
+          // ignore storage quota errors
+        }
         document.title = `${lang === 'vi' ? d.product.name_vi : d.product.name_en} | ROAR COFFEE®`;
       })
       .catch(() => setProduct(null))
